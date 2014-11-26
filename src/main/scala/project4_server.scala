@@ -173,7 +173,7 @@ object project4_server {
       }
       
       case viewHomeTimeline(i) => {
-        workerArray((i/numPerWorker).toInt) ! getHomeTimeline(i, sender)
+        workerArray((i%numWorkers).toInt) ! getHomeTimeline(i, sender)
       }
 //      case viewUserTimeline(i) => {
 //        workerArray((i/numPerWorker).toInt) ! getUserTimeline(i, sender)
@@ -188,13 +188,16 @@ object project4_server {
 //            randomFollowers = numWorkers*numPerWorker - 1
 //          println(randomFollowers)
 //          followers = genRandExceptCur(0, numWorkers*numPerWorker, i, randomFollowers)
-          workerArray((i/numPerWorker).toInt) ! buildFollowers(i)
+          workerArray((i%numWorkers).toInt) ! buildFollowers(i)
+          
         }
+        println("build sent!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" )
+        
       }
       
       case BuildFinshed => {
         countFinished = countFinished + 1
-        println(countFinished)
+        //println(countFinished + " " + sender)
         if(countFinished >= numWorkers*numPerWorker)
           ready = true
       }
@@ -219,27 +222,27 @@ object project4_server {
     
     def receive = {
       case processWorkload(user_id, ref_id, time_stamp, workerArray) => {
-        var workerId = (user_id/numPerWorker).toInt
+        var workerId = (user_id%numWorkers).toInt
 //        println(user_id + " process at " + workerId + " " +user_id.toInt)
         workerArray(workerId) ! processTweet(user_id, time_stamp, ref_id, workerArray)
       }
       
       case processTweet(user_id, time_stamp, ref_id, workerArray) => {
-        insertIntoArray(userTimeline((user_id-numPerWorker*self.path.name.toInt).toInt), ref_id, time_stamp)
+        insertIntoArray(userTimeline((user_id/numWorkers).toInt), ref_id, time_stamp)
  //       userTimeline((user_id-numPerWorker*self.path.name.toInt).toInt).append(ref_id)
 //        var userT = userTimeline((user_id-numPerWorker*self.path.name.toInt).toInt)
 //        println("process_in: actor" + self + " " + user_id + " send tweet: " + tweetStorage(ref_id).text  )
-        sender ! getFollowers(user_id, time_stamp, ref_id, followers((user_id-numPerWorker*self.path.name.toInt).toInt), workerArray)
+        sender ! getFollowers(user_id, time_stamp, ref_id, followers((user_id/numWorkers).toInt), workerArray)
       }
       
       case getFollowers(user_id, time_stamp, ref_id, followers, workerArray) => {
         for(node<-followers){
-          workerArray((node/numPerWorker).toInt) ! updateHomeTimeline(node, time_stamp, ref_id)
+          workerArray((node%numWorkers).toInt) ! updateHomeTimeline(node, time_stamp, ref_id)
         }
       }
       
       case updateHomeTimeline(user_id, time_stamp, ref_id) => {
-        insertIntoArray(homeTimeline((user_id-numPerWorker*self.path.name.toInt).toInt), ref_id, time_stamp)
+        insertIntoArray(homeTimeline((user_id/numWorkers).toInt), ref_id, time_stamp)
 //        homeTimeline((user_id-numPerWorker*self.path.name.toInt).toInt).append(ref_id)
 //        println(user_id + " following: " + tweetStorage(ref_id).text  )
 
@@ -250,12 +253,12 @@ object project4_server {
         if (randomFollowers >= numWorkers * numPerWorker)
           randomFollowers = numWorkers * numPerWorker - 1
         //println(randomFollowers)      
-        followers((user_id-numPerWorker*self.path.name.toInt).toInt) = genRandExceptCur(0, numWorkers * numPerWorker, user_id, randomFollowers) 
+        followers((user_id/numWorkers).toInt) = genRandExceptCur(0, numWorkers * numPerWorker, user_id, randomFollowers) 
         sender ! BuildFinshed
       }
       
       case getHomeTimeline(i, user_actor) => {
-        var line = homeTimeline((i-numPerWorker*self.path.name.toInt).toInt)
+        var line = homeTimeline((i/numWorkers).toInt)
         var userLine = line.dropRight(line.size-10)
         println(i + " homeTimeline")
         for(ele<-userLine){
@@ -280,9 +283,9 @@ object project4_server {
       case viewUserTimeline(i) => {
         var timeLine = ArrayBuffer[String]()
         var line = userTimeline(i)
-        var userLine = line.dropRight(line.size - 10)
+        var userLine = line.dropRight(line.size - 25)
 
-        println(i + " userTimeline  " + line.size + " " + self)
+        println(sender + " userTimeline  " + line.size + " " + self)
         for (ele <- userLine) {
           var message = tweetStorage(ele.ref_id).user_id + " at " + dateToString(tweetStorage(ele.ref_id).time_stamp) + " : " + tweetStorage(ele.ref_id).text
           println(message)
@@ -305,7 +308,7 @@ object project4_server {
      }
 
      case numFollowers(user_id) => {
-       println(user_id + " numOFfollowers  "   + self + " " + followers(user_id).size + "sender:" + sender)
+       //println(user_id + " numOFfollowers  "   + self + " " + followers(user_id).size + "sender:" + sender)
        sender ! followers_num(followers(user_id).size)
      }
         
