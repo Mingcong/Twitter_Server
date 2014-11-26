@@ -160,6 +160,11 @@ object project4_server {
       case msg:String => {
         println(sender + " " + sender.path.name + " " + msg)
       }
+      
+      case GetNumofServerWorkers => {
+        println(sender + "        "+ self + "        " + numWorkers)
+        sender ! numOfServerWorkers(numWorkers)
+      }
             
       case getTweet(t) => {
 //        println(sender.path.name + " " + t.text )
