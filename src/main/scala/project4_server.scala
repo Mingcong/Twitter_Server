@@ -24,9 +24,11 @@ object project4_server {
   case object InitJob extends Message
   case object IsReady extends Message
   case object IsBossReady extends Message
+  case object IsClientReady extends Message
   case object SendTweet extends Message
   case object ViewTweet extends Message
   case object BuildRelation extends Message
+  case object SentReadytoCient extends Message
 
   case class processWorkload(user_id: Long, ref_id: String, time_stamp: Date, workerArray: ArrayBuffer[ActorRef])
   case class processTweet(user_id: Long, time_stamp: Date, ref_id: String, workerArray: ArrayBuffer[ActorRef])
@@ -41,6 +43,7 @@ object project4_server {
   val numPerWorker: Int = 5000
   val numWorkers: Int = 200
   val prob: ArrayBuffer[Double] = ArrayBuffer(0.06, 0.811, 0.874, 0.966, 0.9825, 0.9999, 0.99999, 1.000)
+  var ClientActors: ArrayBuffer[ActorRef] = ArrayBuffer()
     //    prob(0) = 0.06
     //    prob(1) = 0.751
     //    prob(2) = 0.063
@@ -129,6 +132,7 @@ object project4_server {
   class scheduleActor(numWorkers: Int, workerArray: ArrayBuffer[ActorRef]) extends Actor {
     var count: Int = 0
     var ready: Boolean = false
+    var ClientReady: Boolean = false
     val i: Long = 0
     var countFinished : Long = 0
     def receive = {
@@ -138,19 +142,21 @@ object project4_server {
       }
       
       case GetNumofServerWorkers => {
-        //println(sender + "        "+ self + "        " + numWorkers)
+        println(sender + "        "+ self + "        " + numWorkers)
         sender ! numOfServerWorkers(numWorkers)
+        ClientActors.append(sender)
       }
             
       case getTweet(t) => {
 //        println(sender.path.name + " " + t.text )
         //save message
         tweetStorage += t.ref_id -> t
-        workerArray(count) ! processWorkload(t.user_id ,t.ref_id, t.time_stamp , workerArray)
+        workerArray(count%numWorkers) ! processWorkload(t.user_id ,t.ref_id, t.time_stamp , workerArray)
         count = count +1
-        if(count == numWorkers){
-          count = 0
-        }
+//        println("receive: " + count)
+//        if(count == numWorkers){
+//          count = 0
+//        }
       }
       
 //      case viewHomeTimeline(i) => {
@@ -167,7 +173,7 @@ object project4_server {
       
       case BuildFinshed => {
         countFinished = countFinished + 1
-        //println(countFinished + " " + sender)
+        println(countFinished)
         if(countFinished >= numWorkers*numPerWorker)
           ready = true
       }
@@ -175,7 +181,18 @@ object project4_server {
       case IsBossReady => {
         sender ! ready
       }
+
+      case IsClientReady => {
+        sender ! ClientReady
+      }
       
+      case ClientBossReady => {
+        ClientReady = true
+        println("client ready")
+      }
+//      case SentReadytoCient => {
+//        sender ! ServerActorWantYouWork 
+//      }
     }
     
   }
@@ -312,7 +329,17 @@ object project4_server {
       ready = Await.result(future.mapTo[Boolean], timeout.duration)
     }
     println("Build Finished")
-    boss ! "server start"
+
+
+    var ClientReady: Boolean = false
+    while (!ClientReady) {
+      val future = boss ? IsClientReady
+      ClientReady = Await.result(future.mapTo[Boolean], timeout.duration)
+    }
+//    boss ! SentReadytoCient
+    println("Server Ready")
+    for(client_actor<-ClientActors)
+    	client_actor ! ServerActorWantYouWork
   }
 
 }

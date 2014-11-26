@@ -5,6 +5,8 @@ import scala.collection.mutable.ArrayBuffer
 sealed trait Message
 case object GetNumofServerWorkers extends Message
 case class numOfServerWorkers(num: Int)
+case object ClientBossReady extends Message
+case object ServerActorWantYouWork extends Message
 
 case class numFollowers(user_id: Int)
 case class followers_num(num: Int)
