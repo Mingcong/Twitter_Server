@@ -34,30 +34,17 @@ object project4_server {
   case class updateHomeTimeline(user_id: Long, time_stamp: Date, ref_id: String)
   case class buildFollowers(user_id: Long)
  
-  case class getHomeTimeline(user_id: Long, user_actor: ActorRef)
-
-  case class getUserTimeline(user_id: Long, user_actor: ActorRef)
+//  case class getHomeTimeline(user_id: Long, user_actor: ActorRef)
+//
+//  case class getUserTimeline(user_id: Long, user_actor: ActorRef)
 
   val numPerWorker: Int = 5000
   val numWorkers: Int = 200
   val prob: ArrayBuffer[Double] = ArrayBuffer(0.06, 0.811, 0.874, 0.966, 0.9825, 0.9999, 0.99999, 1.000)
-    //    prob(0) = 0.811
-    //    prob(1) = 0.063
-    //    prob(2) = 0.092
-    //    prob(3) = 0.017
-    //    prob(4) = 0.015
-    //    prob(5) = 0.0015
-    //    prob(6) = 0.0005
-
-//    prob.append(0.06)
-//    prob.append(0.811)
-//    prob.append(0.874)
-//    prob.append(0.966)
-//    prob.append(0.9825)
-//    prob.append(0.999)
-//    prob.append(0.9999)
-//    prob.append(1.000)
-    
+    //    prob(0) = 0.06
+    //    prob(1) = 0.751
+    //    prob(2) = 0.063
+    //    prob(3) = 0.092
 
   var tweetStorage: Map[String, Tweet] = Map()
   def dateToString(current: Date): String = {
@@ -79,12 +66,7 @@ object project4_server {
     }
   }
   
-  
-  
-
-  def genRandFollowerCount(): Int = {
-
-    
+  def genRandFollowerCount(): Int = {    
     var randProb = Random.nextDouble()
     var index = prob.size
     breakable {
@@ -115,8 +97,7 @@ object project4_server {
       return 10001
     }else
 //      return 100001
-      return 10001
-      
+      return 10001      
   }
   
 
@@ -124,15 +105,12 @@ object project4_server {
     first + Random.nextInt(last-first)
   }
 
-
-
   def genRandExceptCur(first: Long, last: Long, current: Long, randomNumber: Int): ArrayBuffer[Long] = {
     var followers: ArrayBuffer[Long] = new ArrayBuffer()
     followers.append(current)
 
     var randomFollower: Long = 0
     var counter: Int = 0
-    //print("cur: " + current)
     while (counter < randomNumber) {
 //      randomFollower = genRandNumber(first.toInt, last.toInt).toLong
     	randomFollower = Random.nextInt(last.toInt).toLong
@@ -140,8 +118,6 @@ object project4_server {
 //        randomFollower = genRandNumber(first.toInt, last.toInt).toLong
         randomFollower = Random.nextInt(last.toInt).toLong
       followers.append(randomFollower)
-      //print(" " + randomFollower)
-
       counter += 1
     }
     followers.remove(0)
@@ -162,7 +138,7 @@ object project4_server {
       }
       
       case GetNumofServerWorkers => {
-        println(sender + "        "+ self + "        " + numWorkers)
+        //println(sender + "        "+ self + "        " + numWorkers)
         sender ! numOfServerWorkers(numWorkers)
       }
             
@@ -177,24 +153,13 @@ object project4_server {
         }
       }
       
-      case viewHomeTimeline(i) => {
-        workerArray((i%numWorkers).toInt) ! getHomeTimeline(i, sender)
-      }
-//      case viewUserTimeline(i) => {
-//        workerArray((i/numPerWorker).toInt) ! getUserTimeline(i, sender)
+//      case viewHomeTimeline(i) => {
+//        workerArray((i%numWorkers).toInt) ! getHomeTimeline(i, sender)
 //      }
-      
+
       case BuildRelation => {
-//        var randomFollowers = 0
         for(i<-0 until numWorkers*numPerWorker) {
-//          var followers = ArrayBuffer[Long]() 
-//          randomFollowers = genRandFollowerCount()
-//          if(randomFollowers >= numWorkers*numPerWorker)
-//            randomFollowers = numWorkers*numPerWorker - 1
-//          println(randomFollowers)
-//          followers = genRandExceptCur(0, numWorkers*numPerWorker, i, randomFollowers)
-          workerArray((i%numWorkers).toInt) ! buildFollowers(i)
-          
+          workerArray((i%numWorkers).toInt) ! buildFollowers(i)  
         }
         println("build sent!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" )
         
@@ -217,10 +182,7 @@ object project4_server {
   
   class workerActor() extends Actor {
     var userTimeline = new Array[ArrayBuffer[TimeElement]](numPerWorker)
-    var homeTimeline = new Array[ArrayBuffer[TimeElement]](numPerWorker)
-    
-
-    
+    var homeTimeline = new Array[ArrayBuffer[TimeElement]](numPerWorker)    
     var followers = new Array[ArrayBuffer[Long]](numPerWorker)
     
     var ready: Boolean = false
@@ -228,14 +190,11 @@ object project4_server {
     def receive = {
       case processWorkload(user_id, ref_id, time_stamp, workerArray) => {
         var workerId = (user_id%numWorkers).toInt
-//        println(user_id + " process at " + workerId + " " +user_id.toInt)
         workerArray(workerId) ! processTweet(user_id, time_stamp, ref_id, workerArray)
       }
       
       case processTweet(user_id, time_stamp, ref_id, workerArray) => {
         insertIntoArray(userTimeline((user_id/numWorkers).toInt), ref_id, time_stamp)
- //       userTimeline((user_id-numPerWorker*self.path.name.toInt).toInt).append(ref_id)
-//        var userT = userTimeline((user_id-numPerWorker*self.path.name.toInt).toInt)
 //        println("process_in: actor" + self + " " + user_id + " send tweet: " + tweetStorage(ref_id).text  )
         sender ! getFollowers(user_id, time_stamp, ref_id, followers((user_id/numWorkers).toInt), workerArray)
       }
@@ -248,7 +207,6 @@ object project4_server {
       
       case updateHomeTimeline(user_id, time_stamp, ref_id) => {
         insertIntoArray(homeTimeline((user_id/numWorkers).toInt), ref_id, time_stamp)
-//        homeTimeline((user_id-numPerWorker*self.path.name.toInt).toInt).append(ref_id)
 //        println(user_id + " following: " + tweetStorage(ref_id).text  )
 
       }
@@ -257,40 +215,38 @@ object project4_server {
         var randomFollowers = genRandFollowerCount()
         if (randomFollowers >= numWorkers * numPerWorker)
           randomFollowers = numWorkers * numPerWorker - 1
-        //println(randomFollowers)      
+   
         followers((user_id/numWorkers).toInt) = genRandExceptCur(0, numWorkers * numPerWorker, user_id, randomFollowers) 
         sender ! BuildFinshed
       }
       
-      case getHomeTimeline(i, user_actor) => {
-        var line = homeTimeline((i/numWorkers).toInt)
-        var userLine = line.dropRight(line.size-10)
-        println(i + " homeTimeline")
-        for(ele<-userLine){
-          println(tweetStorage(ele.ref_id ).user_id   + " at " + dateToString(tweetStorage(ele.ref_id ).time_stamp)  + " : "+ tweetStorage(ele.ref_id ).text )
-        }
-      }
+//      case getHomeTimeline(i, user_actor) => {
+//        var line = homeTimeline((i/numWorkers).toInt)
+//        var userLine = line.dropRight(line.size-10)
+//        println(i + " homeTimeline")
+//        for(ele<-userLine){
+//          println(tweetStorage(ele.ref_id ).user_id   + " at " + dateToString(tweetStorage(ele.ref_id ).time_stamp)  + " : "+ tweetStorage(ele.ref_id ).text )
+//        }
+//      }
 
-      //      case getUserTimeline(i, user_actor) => {
-      //        var timeLine =  ArrayBuffer[String]()
-      //        var line = userTimeline((i-numPerWorker*self.path.name.toInt).toInt)
-      //        var userLine = line.dropRight(line.size-10)
-      //        
-      //        println(i + " userTimeline")
-      //        for(ele<-userLine){
-      //          var message = tweetStorage(ele.ref_id ).user_id   + " at " + dateToString(tweetStorage(ele.ref_id ).time_stamp)  + " : "+ tweetStorage(ele.ref_id ).text
-      //          println(message)
-      //          timeLine.append(message)
-      //        }
-      //        user_actor ! displayUserTimeLine(timeLine)
-      //      }
+      case viewHomeTimeline(i) => {
+        var timeLine = ArrayBuffer[String]()
+        var line = homeTimeline(i)
+        var userLine = line.dropRight(line.size - 25)
+        println(sender.path.name + " homeTimeline " + line.size)
+        for (ele <- userLine) {
+          var message = tweetStorage(ele.ref_id).user_id + " at " + dateToString(tweetStorage(ele.ref_id).time_stamp) + " : " + tweetStorage(ele.ref_id).text
+          println(message)
+          timeLine.append(message)
+        }
+        sender ! displayHomeTimeLine(timeLine)
+      }
 
       case viewUserTimeline(i) => {
         var timeLine = ArrayBuffer[String]()
         var line = userTimeline(i)
         var userLine = line.dropRight(line.size - 25)
-
-        println(sender + " userTimeline  " + line.size + " " + self)
+        println(sender.path.name + " userTimeline " + line.size )
         for (ele <- userLine) {
           var message = tweetStorage(ele.ref_id).user_id + " at " + dateToString(tweetStorage(ele.ref_id).time_stamp) + " : " + tweetStorage(ele.ref_id).text
           println(message)
@@ -313,36 +269,20 @@ object project4_server {
      }
 
      case numFollowers(user_id) => {
-       //println(user_id + " numOFfollowers  "   + self + " " + followers(user_id).size + "sender:" + sender)
        sender ! followers_num(followers(user_id).size)
+       //println(user_id + " numOFfollowers  "   + self + " " + followers(user_id).size + "sender:" + sender)
      }
         
     }
     
   }
   
-//  class clientActor(boss:ActorRef) extends Actor {
-//    def receive = {
-//      case SendTweet => {
-//        val t = new Tweet(self.path.name.substring(6).toInt, "what are you doing?", getCurrentTime)
-//        boss ! getTweet(t)
-//      }
-//      
-//      
-//      case ViewTweet => {
-//        //boss ! viewHomeTimeline(self.path.name.substring(6).toInt)
-//        boss ! viewUserTimeline(self.path.name.substring(6).toInt)
-//      }
-//          
-//    }
-//
-//    
-//  }
+
   
   def main(args: Array[String]) {
 //    val numWorkers = if (args.length > 0) args(0) toInt else 100  // the number of workers in server
     var workerArray = ArrayBuffer[ActorRef]()
-//    var clientArray = ArrayBuffer[ActorRef]()
+
     val system = ActorSystem("TwitterSystem")
     val numUsers = numWorkers * numPerWorker
     var counter: Int =0
@@ -352,14 +292,6 @@ object project4_server {
       counter += 1
     }
     val boss = system.actorOf(Props(classOf[scheduleActor],numWorkers,workerArray), "boss")
-    
-
-//    counter = 0
-//    while(counter < numUsers){
-//      val client = system.actorOf(Props(classOf[clientActor],boss), "client" + counter.toString)
-//      clientArray.append(client)
-//      counter += 1
-//    }
     
     for (node <- workerArray) 
       node ! InitJob
@@ -381,26 +313,6 @@ object project4_server {
     }
     println("Build Finished")
     boss ! "server start"
-//    for(i<-0 until numUsers){
-//      var send = math.random < 0.6
-//      if(send)
-//        system.scheduler.schedule(1 seconds, 1 seconds, clientArray(i), SendTweet ) 
-//    }
-    
-
-//    system.scheduler.scheduleOnce(10 seconds) {
-//      clientArray(0) ! ViewTweet
-//      clientArray(1) ! ViewTweet
-//    }
-//    
-//    system.scheduler.scheduleOnce(100 seconds) {
-//      clientArray(0) ! ViewTweet
-//      clientArray(1) ! ViewTweet
-//    }
-//    
-//    system.scheduler.scheduleOnce(100 seconds) {
-//    	system.shutdown
-//    }
   }
 
 }
