@@ -45,6 +45,7 @@ object project4_server {
   val prob: ArrayBuffer[Double] = ArrayBuffer(0.06, 0.811, 0.874, 0.966, 0.9825, 0.9999, 0.99999, 1.000)
   var ClientActors: ArrayBuffer[ActorRef] = ArrayBuffer()
   var workloadPerWorker: ArrayBuffer[Int] = ArrayBuffer()
+  var requestPerWorker: ArrayBuffer[Int] = ArrayBuffer()
     //    prob(0) = 0.06
     //    prob(1) = 0.751
     //    prob(2) = 0.063
@@ -257,26 +258,28 @@ object project4_server {
         var timeLine = ArrayBuffer[String]()
         var line = homeTimeline(i)
         var userLine = line.dropRight(line.size - 25)
-        println(sender.path.name + " homeTimeline " + line.size)
+        //println(sender.path.name + " homeTimeline " + line.size)
         for (ele <- userLine) {
           var message = tweetStorage(ele.ref_id).user_id + " at " + dateToString(tweetStorage(ele.ref_id).time_stamp) + " : " + tweetStorage(ele.ref_id).text
-          println(message)
+          //println(message)
           timeLine.append(message)
         }
         sender ! displayHomeTimeLine(timeLine)
+        requestPerWorker(self.path.name.toInt) = requestPerWorker(self.path.name.toInt) +1
       }
 
       case viewUserTimeline(i) => {
         var timeLine = ArrayBuffer[String]()
         var line = userTimeline(i)
         var userLine = line.dropRight(line.size - 25)
-        println(sender.path.name + " userTimeline " + line.size )
+        //println(sender.path.name + " userTimeline " + line.size )
         for (ele <- userLine) {
           var message = tweetStorage(ele.ref_id).user_id + " at " + dateToString(tweetStorage(ele.ref_id).time_stamp) + " : " + tweetStorage(ele.ref_id).text
-          println(message)
+          //println(message)
           timeLine.append(message)
         }
         sender ! displayUserTimeLine(timeLine)
+        requestPerWorker(self.path.name.toInt) = requestPerWorker(self.path.name.toInt) +1
       }
             
       case InitJob => {
@@ -315,6 +318,7 @@ object project4_server {
       workerArray.append(worker)
       counter += 1
       workloadPerWorker.append(0)
+      requestPerWorker.append(0)
     }
     val boss = system.actorOf(Props(classOf[scheduleActor],numWorkers,workerArray), "boss")
     
@@ -352,13 +356,19 @@ object project4_server {
     for(client_actor<-ClientActors) {
       client_actor ! ServerActorWantYouWork
     }
-    var t = 120
+    var t = 180
     system.scheduler.scheduleOnce(t seconds) {
-      var TotalWorkload : Double = 0.0
+      var SendWorkload : Double = 0.0
+      var RequesWorkload : Double = 0.0
       for(workload<-workloadPerWorker) {
-        TotalWorkload = TotalWorkload + workload
+        SendWorkload = SendWorkload + workload
       }
-      println("throughput = " + TotalWorkload/t)
+      for(workload<-requestPerWorker) {
+        RequesWorkload = RequesWorkload + workload
+      }
+      println("RequesWorkload = " + RequesWorkload)
+      println("SendWorkload = " + SendWorkload)
+      println("throughput = " + (SendWorkload+RequesWorkload)/t)
     }
     	
   }
