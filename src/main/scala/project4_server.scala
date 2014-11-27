@@ -137,6 +137,7 @@ object project4_server {
     var ClientReady: Boolean = false
     val i: Long = 0
     var countFinished : Long = 0
+    var countClient : Int = 0
     def receive = {
       
       case msg:String => {
@@ -192,10 +193,14 @@ object project4_server {
       case IsClientReady => {
         sender ! ClientReady
       }
-      
+
       case ClientBossReady => {
-        ClientReady = true
-        println("client ready")
+        countClient = countClient + 1
+        if (countClient >= ClientActors.size) {
+          ClientReady = true
+          println("client ready")
+        }
+
       }
 //      case SentReadytoCient => {
 //        sender ! ServerActorWantYouWork 
