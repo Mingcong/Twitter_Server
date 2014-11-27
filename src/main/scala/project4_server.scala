@@ -44,6 +44,7 @@ object project4_server {
   val numWorkers: Int = 200
   val prob: ArrayBuffer[Double] = ArrayBuffer(0.06, 0.811, 0.874, 0.966, 0.9825, 0.9999, 0.99999, 1.000)
   var ClientActors: ArrayBuffer[ActorRef] = ArrayBuffer()
+  var workloadPerWorker: ArrayBuffer[Int] = ArrayBuffer()
     //    prob(0) = 0.06
     //    prob(1) = 0.751
     //    prob(2) = 0.063
@@ -181,6 +182,11 @@ object project4_server {
       case IsBossReady => {
         sender ! ready
       }
+      
+//      case IsServerBossReady => {
+//        sender ! ServerReady
+//      }
+      
 
       case IsClientReady => {
         sender ! ClientReady
@@ -220,6 +226,7 @@ object project4_server {
         for(node<-followers){
           workerArray((node%numWorkers).toInt) ! updateHomeTimeline(node, time_stamp, ref_id)
         }
+        workloadPerWorker(self.path.name.toInt) = workloadPerWorker(self.path.name.toInt) +1
       }
       
       case updateHomeTimeline(user_id, time_stamp, ref_id) => {
@@ -307,6 +314,7 @@ object project4_server {
       val worker = system.actorOf(Props(classOf[workerActor]), counter.toString)
       workerArray.append(worker)
       counter += 1
+      workloadPerWorker.append(0)
     }
     val boss = system.actorOf(Props(classOf[scheduleActor],numWorkers,workerArray), "boss")
     
@@ -330,7 +338,10 @@ object project4_server {
     }
     println("Build Finished")
 
-
+    for(client_actor<-ClientActors) {
+      client_actor ! ServerReady
+    }
+    
     var ClientReady: Boolean = false
     while (!ClientReady) {
       val future = boss ? IsClientReady
@@ -338,8 +349,18 @@ object project4_server {
     }
 //    boss ! SentReadytoCient
     println("Server Ready")
-    for(client_actor<-ClientActors)
-    	client_actor ! ServerActorWantYouWork
+    for(client_actor<-ClientActors) {
+      client_actor ! ServerActorWantYouWork
+    }
+    var t = 120
+    system.scheduler.scheduleOnce(t seconds) {
+      var TotalWorkload : Double = 0.0
+      for(workload<-workloadPerWorker) {
+        TotalWorkload = TotalWorkload + workload
+      }
+      println("throughput = " + TotalWorkload/t)
+    }
+    	
   }
 
 }
