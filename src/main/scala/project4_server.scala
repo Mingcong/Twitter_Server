@@ -41,7 +41,7 @@ object project4_server {
 //  case class getUserTimeline(user_id: Long, user_actor: ActorRef)
 
   val numPerWorker: Int = 5000
-  val numWorkers: Int = 200
+  val numWorkers: Int = 100
   val prob: ArrayBuffer[Double] = ArrayBuffer(0.06, 0.811, 0.874, 0.966, 0.9825, 0.9999, 0.99999, 1.000)
   var ClientActors: ArrayBuffer[ActorRef] = ArrayBuffer()
   var workloadPerWorker: ArrayBuffer[Int] = ArrayBuffer()
@@ -265,7 +265,8 @@ object project4_server {
         var userLine = line.dropRight(line.size - 25)
         //println(sender.path.name + " homeTimeline " + line.size)
         for (ele <- userLine) {
-          var message = tweetStorage(ele.ref_id).user_id + " at " + dateToString(tweetStorage(ele.ref_id).time_stamp) + " : " + tweetStorage(ele.ref_id).text
+          //var message = tweetStorage(ele.ref_id).user_id + " at " + dateToString(tweetStorage(ele.ref_id).time_stamp) + " : " + tweetStorage(ele.ref_id).text
+          var message = tweetStorage(ele.ref_id).text + " sent by:" + tweetStorage(ele.ref_id).user_id + " at " + dateToString(tweetStorage(ele.ref_id).time_stamp)
           //println(message)
           timeLine.append(message)
         }
