@@ -14,9 +14,9 @@ case object ServerReady extends Message
 case class numFollowers(user_id: Int)
 case class followers_num(num: Int)
 case class viewHomeTimeline(user_id: Int)
-case class viewUserTimeline(user_id: Int)
+
 case class getTweet(t: Tweet)
 case class displayUserTimeLine(userTimeLine: ArrayBuffer[String])
 case class displayHomeTimeLine(HomeTimeLine: ArrayBuffer[String])
-case class Tweet(user_id: Long, text: String, time_stamp: Date, var ref_id: String)
+case class Tweet(user_id: Int, text: String, time_stamp: String, var ref_id: String)
 

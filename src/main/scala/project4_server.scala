@@ -37,12 +37,19 @@ object project4_server extends App with SimpleRoutingApp {
 
   case class buildFollowers(user_id: Int)
   case class numFollowers(user_id: Int)
+  case class processWorkload(user_id: Int, ref_id: String, time_stamp: String)
+  case class processTweet(user_id: Int, time_stamp: Date, ref_id: String)
+  case class getFollowers(user_id: Int, time_stamp: Date, ref_id: String, followers: ArrayBuffer[Int])
+  case class updateHomeTimeline(user_id: Int, time_stamp: Date, ref_id: String)
+  case class viewUserTimeline(user_id: Int)
+
 
   val prob: ArrayBuffer[Double] = ArrayBuffer(0.06, 0.811, 0.874, 0.966, 0.9825, 0.9999, 0.99999, 1.000)
 
   val numWorkers = if (args.length > 0) args(0) toInt else 20  // the number of workers in server
-  val numPerWorker = if (args.length > 1) args(1) toInt else 5000  // the number of workers in server
+  val numPerWorker = if (args.length > 1) args(1) toInt else 500  // the number of workers in server
 
+  var tweetStorage: Map[String, Tweet] = Map()
 
   var workerArray = ArrayBuffer[ActorRef]()
   implicit val actorSystem = ActorSystem()
@@ -82,12 +89,14 @@ object project4_server extends App with SimpleRoutingApp {
 
   object MyJsonProtocol extends DefaultJsonProtocol {
     implicit val followerNumFormat = jsonFormat2(followerNum)
+    implicit val tweetFormat = jsonFormat4(Tweet)
   }
   import MyJsonProtocol._
 
 
   println("hello smc")
   var count = 0
+  var tweet_count = 0
 
   def getJson(route: Route) = {
     respondWithMediaType(MediaTypes.`application/json`) { route }
@@ -113,18 +122,63 @@ object project4_server extends App with SimpleRoutingApp {
         }
       }
     } ~
+    getJson {
+      path("viewUserTimeline" / IntNumber) { index =>
+        println("view" + index)
+        complete {
+          (workerArray(index % numWorkers) ? viewUserTimeline(index)).mapTo[List[String]].map(s => s.toJson.prettyPrint)
+
+        }
+      }
+    } ~
     get {
       path("getNum") {
         complete {
           count.toString
         }
       }
+    } ~
+    getJson {
+        path("getTweet"/ Rest) { index =>
+          complete {
+            tweetStorage(index).toJson.prettyPrint
+          }
+        }
+    } ~
+    post {
+      path("postTweet") {
+        parameters("userID".as[Int], "text".as[String], "timeStamp".as[String], "refID".as[String]) { (userID, text, timeStamp, refID) =>
+          val t = Tweet(userID,text,timeStamp,refID)
+          println(t.user_id + " " + t.text + " " + t.time_stamp)
+          tweetStorage += t.ref_id -> t
+          workerArray(tweet_count%numWorkers) ! processWorkload(t.user_id ,t.ref_id, t.time_stamp)
+          tweet_count = tweet_count + 1
+
+          complete {
+            "ok"
+          }
+        }
+      }
     }
+
+
 
 
   }
 
   case class TimeElement(ref_id: String, time_stamp: Date)
+
+  def insertIntoArray(userTimeline: ArrayBuffer[TimeElement], ref_id: String, time_stamp: Date) {
+    if (0 == userTimeline.size) {
+      userTimeline.append(TimeElement(ref_id, time_stamp))
+    } else {
+      var index = 0
+      while (index < userTimeline.size && time_stamp.compareTo(userTimeline(index).time_stamp) < 0)
+        index += 1
+      userTimeline.insert(index, TimeElement(ref_id, time_stamp))
+    }
+  }
+
 
 
   class workerActor() extends Actor {
@@ -137,6 +191,42 @@ object project4_server extends App with SimpleRoutingApp {
 
 
     def receive = {
+
+      case processWorkload(user_id, ref_id, time_stamp) => {
+        val workerId = user_id%numWorkers
+        workerArray(workerId) ! processTweet(user_id, stringToDate(time_stamp), ref_id)
+      }
+
+      case processTweet(user_id, time_stamp, ref_id) => {
+        insertIntoArray(userTimeline(user_id/numWorkers), ref_id, time_stamp)
+        println(user_id + " send tweet: " + tweetStorage(ref_id).text  )
+        sender ! getFollowers(user_id, time_stamp, ref_id, followers(user_id/numWorkers))
+      }
+
+      case getFollowers(user_id, time_stamp, ref_id, followers) => {
+        for (node <- followers) {
+          workerArray(node % numWorkers) ! updateHomeTimeline(node, time_stamp, ref_id)
+        }
+//        workloadPerWorker(self.path.name.toInt) = workloadPerWorker(self.path.name.toInt) + 1
+      }
+      case updateHomeTimeline(user_id, time_stamp, ref_id) => {
+        insertIntoArray(homeTimeline((user_id/numWorkers).toInt), ref_id, time_stamp)
+        //        println(user_id + " following: " + tweetStorage(ref_id).text  )
+
+      }
+
+      case viewUserTimeline(i) => {
+        var timeLine: List[String] = List()
+        val line = userTimeline(i/numWorkers)
+        val userLine = line.dropRight(line.size - 25)
+        //println(sender.path.name + " userTimeline " + line.size )
+        for (ele <- userLine) {
+          val message = tweetStorage(ele.ref_id).user_id + " at " + tweetStorage(ele.ref_id).time_stamp + " : " + tweetStorage(ele.ref_id).text
+          timeLine = timeLine :+ message
+        }
+        sender ! timeLine
+//        requestPerWorker(self.path.name.toInt) = requestPerWorker(self.path.name.toInt) +1
+      }
 
       case InitJob => {
         for(i <- 0 until numPerWorker){
@@ -242,6 +332,22 @@ object project4_server extends App with SimpleRoutingApp {
     followers
 
   }
+
+  def dateToString(current: Date): String = {
+    val formatter = new SimpleDateFormat("yyyy-MM-ddHH:mm:ss.SSS")
+    val s: String = formatter.format(current)
+    return s
+  }
+
+  def stringToDate(current: String): Date = {
+    val format = new SimpleDateFormat("yyyy-MM-ddHH:mm:ss.SSS")
+    val s: Date = format.parse(current)
+    return s
+  }
+
+
+
+
 
 
 }
