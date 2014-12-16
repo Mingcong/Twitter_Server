@@ -6,7 +6,6 @@ import spray.json.{JsonFormat}
 
 
 
-
 import akka.actor.{ActorSystem, Actor, Props, ActorRef}
 import scala.collection.mutable.ArrayBuffer
 import java.security.MessageDigest
@@ -37,11 +36,16 @@ object project4_server extends App with SimpleRoutingApp {
 
   case class buildFollowers(user_id: Int)
   case class numFollowers(user_id: Int)
+  case class addFollowings(user_id: Int, id: Int)
+
   case class processWorkload(user_id: Int, ref_id: String, time_stamp: String)
   case class processTweet(user_id: Int, time_stamp: Date, ref_id: String)
   case class getFollowers(user_id: Int, time_stamp: Date, ref_id: String, followers: ArrayBuffer[Int])
   case class updateHomeTimeline(user_id: Int, time_stamp: Date, ref_id: String)
   case class viewUserTimeline(user_id: Int)
+  case class clientGetFollowers(user_id: Int)
+  case class clientGetFriends(user_id: Int)
+
 
 
   val prob: ArrayBuffer[Double] = ArrayBuffer(0.06, 0.811, 0.874, 0.966, 0.9825, 0.9999, 0.99999, 1.000)
@@ -124,9 +128,18 @@ object project4_server extends App with SimpleRoutingApp {
     } ~
     getJson {
       path("viewUserTimeline" / IntNumber) { index =>
-        println("view" + index)
+        println("view UserTimeline" + index)
         complete {
           (workerArray(index % numWorkers) ? viewUserTimeline(index)).mapTo[List[String]].map(s => s.toJson.prettyPrint)
+
+        }
+      }
+    } ~
+    getJson {
+      path("viewHomeTimeline" / IntNumber) { index =>
+        println("view HomeTimeline" + index)
+        complete {
+          (workerArray(index % numWorkers) ? viewHomeTimeline(index)).mapTo[List[String]].map(s => s.toJson.prettyPrint)
 
         }
       }
@@ -144,6 +157,20 @@ object project4_server extends App with SimpleRoutingApp {
             tweetStorage(index).toJson.prettyPrint
           }
         }
+    } ~
+    getJson {
+      path("getFollowers"/ IntNumber) { index =>
+        complete {
+          (workerArray(index % numWorkers) ? clientGetFollowers(index)).mapTo[Array[Int]].map(s => s.toJson.prettyPrint)
+        }
+      }
+    } ~
+    getJson {
+      path("getFriends"/ IntNumber) { index =>
+        complete {
+          (workerArray(index % numWorkers) ? clientGetFriends(index)).mapTo[Array[Int]].map(s => s.toJson.prettyPrint)
+        }
+      }
     } ~
     post {
       path("postTweet") {
@@ -185,6 +212,7 @@ object project4_server extends App with SimpleRoutingApp {
     var userTimeline = new Array[ArrayBuffer[TimeElement]](numPerWorker)
     var homeTimeline = new Array[ArrayBuffer[TimeElement]](numPerWorker)
     var followers = new Array[ArrayBuffer[Int]](numPerWorker)
+    var followings = new Array[ArrayBuffer[Int]](numPerWorker)
 
     var ready: Boolean = false
     var count: Int = 0
@@ -228,11 +256,33 @@ object project4_server extends App with SimpleRoutingApp {
 //        requestPerWorker(self.path.name.toInt) = requestPerWorker(self.path.name.toInt) +1
       }
 
+      case viewHomeTimeline(i) => {
+        var timeLine: List[String] = List()
+        val line1 = userTimeline(i/numWorkers)
+        val userLine = line1.dropRight(line1.size - 25)
+        val line2 = homeTimeline(i/numWorkers)
+        val homeLine = line2.dropRight(line2.size - 25)
+        //println(sender.path.name + " userTimeline " + line.size )
+        for (ele <- userLine) {
+          val message = tweetStorage(ele.ref_id).user_id + " at " + tweetStorage(ele.ref_id).time_stamp + " : " + tweetStorage(ele.ref_id).text
+          timeLine = timeLine :+ message
+        }
+        for (ele <- homeLine) {
+          val message = tweetStorage(ele.ref_id).user_id + " at " + tweetStorage(ele.ref_id).time_stamp + " : " + tweetStorage(ele.ref_id).text
+          timeLine = timeLine :+ message
+        }
+
+        sender ! timeLine
+        //        requestPerWorker(self.path.name.toInt) = requestPerWorker(self.path.name.toInt) +1
+      }
+
+
       case InitJob => {
         for(i <- 0 until numPerWorker){
           userTimeline(i) = new ArrayBuffer()
           homeTimeline(i) = new ArrayBuffer()
           followers(i) = new ArrayBuffer()
+          followings(i) = new ArrayBuffer()
         }
         ready = true
       }
@@ -266,7 +316,17 @@ object project4_server extends App with SimpleRoutingApp {
         //println(user_id + " numOFfollowers  "   + self + " " + followers(user_id).size + "sender:" + sender)
       }
 
+      case addFollowings(user_id, id) => {
+        followings(id/numWorkers).append(user_id)
+      }
 
+      case clientGetFollowers(user_id) => {
+        sender ! followers(user_id/numWorkers).toArray
+      }
+
+      case clientGetFriends(user_id) => {
+        sender ! followings(user_id/numWorkers).toArray
+      }
 
     }
 
@@ -326,6 +386,7 @@ object project4_server extends App with SimpleRoutingApp {
       //        randomFollower = genRandNumber(first.toInt, last.toInt).toLong
         randomFollower = Random.nextInt(last)
       followers.append(randomFollower)
+      workerArray(randomFollower%numWorkers) ! addFollowings(current, randomFollower)
       counter += 1
     }
     followers.remove(0)
