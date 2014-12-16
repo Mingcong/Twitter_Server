@@ -45,6 +45,10 @@ object project4_server extends App with SimpleRoutingApp {
   case class viewUserTimeline(user_id: Int)
   case class clientGetFollowers(user_id: Int)
   case class clientGetFriends(user_id: Int)
+  case class createFriendship(user_id: Int, newFriend: Double)
+  case class destroyFriendship(user_id: Int, oldFriend: Double)
+  case class destroyTweet(user_id: Int, del_ID: Double)
+
 
 
 
@@ -186,11 +190,37 @@ object project4_server extends App with SimpleRoutingApp {
           }
         }
       }
+    } ~
+    post {
+      path("createFriendship") {
+        parameters("user_ID".as[Int], "newFriend".as[Double]) { (user_ID, newFriend) =>
+          workerArray(user_ID%numWorkers) ! createFriendship(user_ID, newFriend)
+          complete {
+            "ok"
+          }
+        }
+      }
+    } ~
+    post {
+        path("destroyFriendship") {
+          parameters("user_ID".as[Int], "oldFriend".as[Double]) { (user_ID, oldFriend) =>
+            workerArray(user_ID%numWorkers) ! destroyFriendship(user_ID, oldFriend)
+            complete {
+              "ok"
+            }
+          }
+        }
+      } ~
+    post {
+      path("destroyTweet") {
+        parameters("user_ID".as[Int], "del_ID".as[Double]) { (user_ID, del_ID) =>
+          workerArray(user_ID%numWorkers) ! destroyTweet(user_ID, del_ID)
+          complete {
+            "ok"
+          }
+        }
+      }
     }
-
-
-
-
   }
 
   case class TimeElement(ref_id: String, time_stamp: Date)
@@ -247,9 +277,14 @@ object project4_server extends App with SimpleRoutingApp {
         var timeLine: List[String] = List()
         val line = userTimeline(i/numWorkers)
         val userLine = line.dropRight(line.size - 25)
+        var message: String = new String()
         //println(sender.path.name + " userTimeline " + line.size )
         for (ele <- userLine) {
-          val message = tweetStorage(ele.ref_id).user_id + " at " + tweetStorage(ele.ref_id).time_stamp + " : " + tweetStorage(ele.ref_id).text
+          if(tweetStorage.contains(ele.ref_id)) {
+            message = tweetStorage(ele.ref_id).user_id + " at " + tweetStorage(ele.ref_id).time_stamp + " : " + tweetStorage(ele.ref_id).text
+          } else {
+            message = "!!!!!!!!!!!!!!!!!!!!!not find this tweet!!!!!!!!!!!!!!!!!"
+          }
           timeLine = timeLine :+ message
         }
         sender ! timeLine
@@ -262,15 +297,22 @@ object project4_server extends App with SimpleRoutingApp {
         val userLine = line1.dropRight(line1.size - 25)
         val line2 = homeTimeline(i/numWorkers)
         val homeLine = line2.dropRight(line2.size - 25)
+        var message: String = new String()
+        userLine.appendAll(homeLine)
         //println(sender.path.name + " userTimeline " + line.size )
         for (ele <- userLine) {
-          val message = tweetStorage(ele.ref_id).user_id + " at " + tweetStorage(ele.ref_id).time_stamp + " : " + tweetStorage(ele.ref_id).text
+          if(tweetStorage.contains(ele.ref_id)) {
+            message = tweetStorage(ele.ref_id).text + " at " + tweetStorage(ele.ref_id).time_stamp + " :sent by " + tweetStorage(ele.ref_id).user_id
+          } else {
+            message = "!!!!!!!!!!!!!!!!!!!!!not find this tweet!!!!!!!!!!!!!!!!!"
+          }
+
           timeLine = timeLine :+ message
         }
-        for (ele <- homeLine) {
-          val message = tweetStorage(ele.ref_id).user_id + " at " + tweetStorage(ele.ref_id).time_stamp + " : " + tweetStorage(ele.ref_id).text
-          timeLine = timeLine :+ message
-        }
+//        for (ele <- homeLine) {
+//          val message = tweetStorage(ele.ref_id).user_id + " at " + tweetStorage(ele.ref_id).time_stamp + " : " + tweetStorage(ele.ref_id).text
+//          timeLine = timeLine :+ message
+//        }
 
         sender ! timeLine
         //        requestPerWorker(self.path.name.toInt) = requestPerWorker(self.path.name.toInt) +1
@@ -327,6 +369,35 @@ object project4_server extends App with SimpleRoutingApp {
       case clientGetFriends(user_id) => {
         sender ! followings(user_id/numWorkers).toArray
       }
+
+      case createFriendship(user_id, newFriend) => {
+        var friend = ((self.path.name.toInt + newFriend)*numPerWorker).toInt
+        while(followings(user_id/numWorkers).contains(friend)) {
+          friend = friend + 1
+        }
+        if(friend < (self.path.name.toInt + 1)*numPerWorker) {
+          followings(user_id / numWorkers).append(friend)
+          println("add friends " + friend)
+        }
+      }
+
+      case destroyFriendship(user_id, oldFriend) => {
+        val friends = followings(user_id/numWorkers)
+        val friend = friends((oldFriend*friends.size).toInt)
+        println("delete friends " + friend)
+        followings(user_id/numWorkers) -= friend
+      }
+
+      case destroyTweet(user_id, del_ID) => {
+        val line = userTimeline(user_id/numWorkers)
+        val t = line((line.size*del_ID).toInt)
+        tweetStorage = tweetStorage - t.ref_id
+        println("delete tweet " + t.ref_id)
+      }
+
+
+
+
 
     }
 
