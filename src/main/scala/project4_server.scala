@@ -4,8 +4,6 @@ import spray.json._
 import DefaultJsonProtocol._
 import spray.json.{JsonFormat}
 
-
-
 import akka.actor.{ActorSystem, Actor, Props, ActorRef}
 import scala.collection.mutable.ArrayBuffer
 import java.security.MessageDigest
@@ -38,7 +36,7 @@ object project4_server extends App with SimpleRoutingApp {
   case class numFollowers(user_id: Int)
   case class addFollowings(user_id: Int, id: Int)
 
-  case class processWorkload(user_id: Int, ref_id: String, time_stamp: String)
+  case class processWorkload(user_id: Int, ref_id: String, time_stamp: String, mentionID: Int)
   case class processTweet(user_id: Int, time_stamp: Date, ref_id: String)
   case class getFollowers(user_id: Int, time_stamp: Date, ref_id: String, followers: ArrayBuffer[Int])
   case class updateHomeTimeline(user_id: Int, time_stamp: Date, ref_id: String)
@@ -48,7 +46,7 @@ object project4_server extends App with SimpleRoutingApp {
   case class createFriendship(user_id: Int, newFriend: Double)
   case class destroyFriendship(user_id: Int, oldFriend: Double)
   case class destroyTweet(user_id: Int, del_ID: Double)
-
+  case class clientGetTweet(user_id: Int, numTweet: Double)
 
 
 
@@ -119,108 +117,115 @@ object project4_server extends App with SimpleRoutingApp {
         }
       }
     } ~
-    getJson {
-      path("getFollowerNum" / IntNumber) { index =>
-        println(index + " " + count)
-        count = count + 1
+      getJson {
+        path("getFollowerNum" / IntNumber) { index =>
+          println(index + " " + count)
+          count = count + 1
 
-        complete {
-          (workerArray(index % numWorkers) ? numFollowers(index)).mapTo[followerNum].map(s => s.toJson.prettyPrint)
+          complete {
+            (workerArray(index % numWorkers) ? numFollowers(index)).mapTo[followerNum].map(s => s.toJson.prettyPrint)
 
+          }
         }
-      }
-    } ~
-    getJson {
-      path("viewUserTimeline" / IntNumber) { index =>
-        println("view UserTimeline" + index)
-        complete {
-          (workerArray(index % numWorkers) ? viewUserTimeline(index)).mapTo[List[String]].map(s => s.toJson.prettyPrint)
+      } ~
+      getJson {
+        path("viewUserTimeline" / IntNumber) { index =>
+          println("view UserTimeline" + index)
+          complete {
+            (workerArray(index % numWorkers) ? viewUserTimeline(index)).mapTo[List[Tweet]].map(s => s.toJson.prettyPrint)
 
+          }
         }
-      }
-    } ~
-    getJson {
-      path("viewHomeTimeline" / IntNumber) { index =>
-        println("view HomeTimeline" + index)
-        complete {
-          (workerArray(index % numWorkers) ? viewHomeTimeline(index)).mapTo[List[String]].map(s => s.toJson.prettyPrint)
+      } ~
+      getJson {
+        path("viewHomeTimeline" / IntNumber) { index =>
+          println("view HomeTimeline" + index)
+          complete {
+            (workerArray(index % numWorkers) ? viewHomeTimeline(index)).mapTo[List[Tweet]].map(s => s.toJson.prettyPrint)
 
+          }
         }
-      }
-    } ~
-    get {
-      path("getNum") {
-        complete {
-          count.toString
+      } ~
+      get {
+        path("getNum") {
+          complete {
+            count.toString
+          }
         }
-      }
-    } ~
-    getJson {
-        path("getTweet"/ Rest) { index =>
+      } ~
+      getJson {
+        path("getTweet" / Rest) { index =>
           complete {
             tweetStorage(index).toJson.prettyPrint
           }
         }
-    } ~
-    getJson {
-      path("getFollowers"/ IntNumber) { index =>
-        complete {
-          (workerArray(index % numWorkers) ? clientGetFollowers(index)).mapTo[Array[Int]].map(s => s.toJson.prettyPrint)
+      } ~
+      getJson {
+        path("getFollowers" / IntNumber) { index =>
+          complete {
+            (workerArray(index % numWorkers) ? clientGetFollowers(index)).mapTo[Array[Int]].map(s => s.toJson.prettyPrint)
+          }
         }
-      }
-    } ~
-    getJson {
-      path("getFriends"/ IntNumber) { index =>
-        complete {
-          (workerArray(index % numWorkers) ? clientGetFriends(index)).mapTo[Array[Int]].map(s => s.toJson.prettyPrint)
+      } ~
+      getJson {
+        path("getFriends" / IntNumber) { index =>
+          complete {
+            (workerArray(index % numWorkers) ? clientGetFriends(index)).mapTo[Array[Int]].map(s => s.toJson.prettyPrint)
+          }
         }
-      }
-    } ~
-    post {
-      path("postTweet") {
-        parameters("userID".as[Int], "text".as[String], "timeStamp".as[String], "refID".as[String]) { (userID, text, timeStamp, refID) =>
-          val t = Tweet(userID,text,timeStamp,refID)
-          println(t.user_id + " " + t.text + " " + t.time_stamp)
-          tweetStorage += t.ref_id -> t
-          workerArray(tweet_count%numWorkers) ! processWorkload(t.user_id ,t.ref_id, t.time_stamp)
-          tweet_count = tweet_count + 1
+      } ~
+      getJson {
+        path("showTweet" / IntNumber / DoubleNumber) { (user_id, numTweet) =>
+          complete {
+            (workerArray(user_id % numWorkers) ? clientGetTweet(user_id, numTweet)).mapTo[Tweet].map(s => s.toJson.prettyPrint)
+          }
+        }
+      } ~
+      post {
+        path("postTweet") {
+          parameters("userID".as[Int], "mentionID".as[Int], "text".as[String], "timeStamp".as[String], "refID".as[String]) { (userID, mentionID, text, timeStamp, refID) =>
+            val t = Tweet(userID, text, timeStamp, refID)
+            println(t.user_id + " " + t.text + " " + t.time_stamp)
+            tweetStorage += t.ref_id -> t
+            workerArray(tweet_count % numWorkers) ! processWorkload(t.user_id, t.ref_id, t.time_stamp, mentionID)
+            tweet_count = tweet_count + 1
 
-          complete {
-            "ok"
-          }
-        }
-      }
-    } ~
-    post {
-      path("createFriendship") {
-        parameters("user_ID".as[Int], "newFriend".as[Double]) { (user_ID, newFriend) =>
-          workerArray(user_ID%numWorkers) ! createFriendship(user_ID, newFriend)
-          complete {
-            "ok"
-          }
-        }
-      }
-    } ~
-    post {
-        path("destroyFriendship") {
-          parameters("user_ID".as[Int], "oldFriend".as[Double]) { (user_ID, oldFriend) =>
-            workerArray(user_ID%numWorkers) ! destroyFriendship(user_ID, oldFriend)
             complete {
               "ok"
             }
           }
         }
       } ~
-    post {
-      path("destroyTweet") {
-        parameters("user_ID".as[Int], "del_ID".as[Double]) { (user_ID, del_ID) =>
-          workerArray(user_ID%numWorkers) ! destroyTweet(user_ID, del_ID)
-          complete {
-            "ok"
+      post {
+        path("createFriendship") {
+          parameters("user_ID".as[Int], "newFriend".as[Double]) { (user_ID, newFriend) =>
+            workerArray(user_ID % numWorkers) ! createFriendship(user_ID, newFriend)
+            complete {
+              "ok"
+            }
+          }
+        }
+      } ~
+      post {
+        path("destroyFriendship") {
+          parameters("user_ID".as[Int], "oldFriend".as[Double]) { (user_ID, oldFriend) =>
+            workerArray(user_ID % numWorkers) ! destroyFriendship(user_ID, oldFriend)
+            complete {
+              "ok"
+            }
+          }
+        }
+      } ~
+      post {
+        path("destroyTweet") {
+          parameters("user_ID".as[Int], "del_ID".as[Double]) { (user_ID, del_ID) =>
+            workerArray(user_ID % numWorkers) ! destroyTweet(user_ID, del_ID)
+            complete {
+              "ok"
+            }
           }
         }
       }
-    }
   }
 
   case class TimeElement(ref_id: String, time_stamp: Date)
@@ -241,6 +246,7 @@ object project4_server extends App with SimpleRoutingApp {
   class workerActor() extends Actor {
     var userTimeline = new Array[ArrayBuffer[TimeElement]](numPerWorker)
     var homeTimeline = new Array[ArrayBuffer[TimeElement]](numPerWorker)
+    var mentionTimeline = new Array[ArrayBuffer[TimeElement]](numPerWorker)
     var followers = new Array[ArrayBuffer[Int]](numPerWorker)
     var followings = new Array[ArrayBuffer[Int]](numPerWorker)
 
@@ -250,7 +256,7 @@ object project4_server extends App with SimpleRoutingApp {
 
     def receive = {
 
-      case processWorkload(user_id, ref_id, time_stamp) => {
+      case processWorkload(user_id, ref_id, time_stamp, mentionID) => {
         val workerId = user_id%numWorkers
         workerArray(workerId) ! processTweet(user_id, stringToDate(time_stamp), ref_id)
       }
@@ -274,48 +280,37 @@ object project4_server extends App with SimpleRoutingApp {
       }
 
       case viewUserTimeline(i) => {
-        var timeLine: List[String] = List()
+        var timeLine: List[Tweet] = List()
         val line = userTimeline(i/numWorkers)
         val userLine = line.dropRight(line.size - 25)
-        var message: String = new String()
+        var t = Tweet(-1, "", "", "")
         //println(sender.path.name + " userTimeline " + line.size )
         for (ele <- userLine) {
           if(tweetStorage.contains(ele.ref_id)) {
-            message = tweetStorage(ele.ref_id).user_id + " at " + tweetStorage(ele.ref_id).time_stamp + " : " + tweetStorage(ele.ref_id).text
-          } else {
-            message = "!!!!!!!!!!!!!!!!!!!!!not find this tweet!!!!!!!!!!!!!!!!!"
+            t = tweetStorage(ele.ref_id)
           }
-          timeLine = timeLine :+ message
+          timeLine = timeLine :+ t
         }
         sender ! timeLine
 //        requestPerWorker(self.path.name.toInt) = requestPerWorker(self.path.name.toInt) +1
       }
 
       case viewHomeTimeline(i) => {
-        var timeLine: List[String] = List()
+        var timeLine: List[Tweet] = List()
         val line1 = userTimeline(i/numWorkers)
         val userLine = line1.dropRight(line1.size - 25)
         val line2 = homeTimeline(i/numWorkers)
         val homeLine = line2.dropRight(line2.size - 25)
-        var message: String = new String()
+        var t = Tweet(-1, "", "", "")
         userLine.appendAll(homeLine)
         //println(sender.path.name + " userTimeline " + line.size )
         for (ele <- userLine) {
           if(tweetStorage.contains(ele.ref_id)) {
-            message = tweetStorage(ele.ref_id).text + " at " + tweetStorage(ele.ref_id).time_stamp + " :sent by " + tweetStorage(ele.ref_id).user_id
-          } else {
-            message = "!!!!!!!!!!!!!!!!!!!!!not find this tweet!!!!!!!!!!!!!!!!!"
+            t = tweetStorage(ele.ref_id)
           }
-
-          timeLine = timeLine :+ message
+          timeLine = timeLine :+ t
         }
-//        for (ele <- homeLine) {
-//          val message = tweetStorage(ele.ref_id).user_id + " at " + tweetStorage(ele.ref_id).time_stamp + " : " + tweetStorage(ele.ref_id).text
-//          timeLine = timeLine :+ message
-//        }
-
         sender ! timeLine
-        //        requestPerWorker(self.path.name.toInt) = requestPerWorker(self.path.name.toInt) +1
       }
 
 
@@ -369,6 +364,13 @@ object project4_server extends App with SimpleRoutingApp {
       case clientGetFriends(user_id) => {
         sender ! followings(user_id/numWorkers).toArray
       }
+      case clientGetTweet(user_id, numTweet) => {
+        val line = homeTimeline(user_id/numWorkers)
+        if(!line.isEmpty)
+          sender ! tweetStorage(line((numTweet*line.size).toInt).ref_id)
+        else
+          sender ! Tweet(-1,"","","")
+      }
 
       case createFriendship(user_id, newFriend) => {
         var friend = ((self.path.name.toInt + newFriend)*numPerWorker).toInt
@@ -394,10 +396,6 @@ object project4_server extends App with SimpleRoutingApp {
         tweetStorage = tweetStorage - t.ref_id
         println("delete tweet " + t.ref_id)
       }
-
-
-
-
 
     }
 
@@ -466,20 +464,14 @@ object project4_server extends App with SimpleRoutingApp {
   }
 
   def dateToString(current: Date): String = {
-    val formatter = new SimpleDateFormat("yyyy-MM-ddHH:mm:ss.SSS")
+    val formatter = new SimpleDateFormat("yyyy-MM-dd_HH:mm:ss.SSS")
     val s: String = formatter.format(current)
     return s
   }
 
   def stringToDate(current: String): Date = {
-    val format = new SimpleDateFormat("yyyy-MM-ddHH:mm:ss.SSS")
+    val format = new SimpleDateFormat("yyyy-MM-dd_HH:mm:ss.SSS")
     val s: Date = format.parse(current)
     return s
   }
-
-
-
-
-
-
 }
