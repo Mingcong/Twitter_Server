@@ -17,4 +17,6 @@ package common
 //case class getTweet(t: Tweet)
 
 case class Tweet(user_id: Int, text: String, time_stamp: String, var ref_id: String)
+case class DirectMessage(sender_id: Int, receiver_id: Double, text: String, time_stamp: String, var ref_id: String)
+
 

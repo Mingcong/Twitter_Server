@@ -38,6 +38,14 @@ object project4_server extends App with SimpleRoutingApp {
 
   case class processWorkload(user_id: Int, ref_id: String, time_stamp: String, mentionID: Int)
   case class processTweet(user_id: Int, time_stamp: Date, ref_id: String, mentionID: Int)
+
+  case class postMessage(user_id: Int, ref_id: String, time_stamp: String, sendID: Double)
+  case class processMessage(user_id: Int, time_stamp: Date, ref_id: String, sendID: Double)
+  case class updateMessageTimeline(user_id: Int, ref_id: String, time_stamp: Date)
+  case class viewSendMessageTimeline(user_id: Int)
+  case class viewReceiveMessageTimeline(user_id: Int)
+  case class destroyMessage(user_id: Int, del_ID: Double)
+
   case class addMentionTimeline(mentionID: Int, time_stamp: Date, ref_id: String)
   case class getFollowers(user_id: Int, time_stamp: Date, ref_id: String, followers: ArrayBuffer[Int])
   case class updateHomeTimeline(user_id: Int, time_stamp: Date, ref_id: String)
@@ -59,6 +67,7 @@ object project4_server extends App with SimpleRoutingApp {
   val numPerWorker = if (args.length > 1) args(1) toInt else 500  // the number of workers in server
 
   var tweetStorage: Map[String, Tweet] = Map()
+  var messageStorage: Map[String, DirectMessage] = Map()
 
   var workerArray = ArrayBuffer[ActorRef]()
   implicit val actorSystem = ActorSystem()
@@ -99,6 +108,8 @@ object project4_server extends App with SimpleRoutingApp {
   object MyJsonProtocol extends DefaultJsonProtocol {
     implicit val followerNumFormat = jsonFormat2(followerNum)
     implicit val tweetFormat = jsonFormat4(Tweet)
+    implicit val messageFormat = jsonFormat5(DirectMessage)
+
   }
   import MyJsonProtocol._
 
@@ -106,6 +117,7 @@ object project4_server extends App with SimpleRoutingApp {
   println("hello smc")
   var count = 0
   var tweet_count = 0
+  var message_count = 0
 
   def getJson(route: Route) = {
     respondWithMediaType(MediaTypes.`application/json`) { route }
@@ -120,7 +132,7 @@ object project4_server extends App with SimpleRoutingApp {
         }
       }
     } ~
-      getJson {
+    getJson {
         path("getFollowerNum" / IntNumber) { index =>
           println(index + " " + count)
           count = count + 1
@@ -130,8 +142,8 @@ object project4_server extends App with SimpleRoutingApp {
 
           }
         }
-      } ~
-      getJson {
+    } ~
+    getJson {
         path("viewUserTimeline" / IntNumber) { index =>
           println("view UserTimeline " + index)
           complete {
@@ -139,8 +151,8 @@ object project4_server extends App with SimpleRoutingApp {
 
           }
         }
-      } ~
-      getJson {
+    } ~
+    getJson {
       path("viewMentionTimeline" / IntNumber) { index =>
         println("view MentionTimeline " + index)
         complete {
@@ -157,9 +169,28 @@ object project4_server extends App with SimpleRoutingApp {
 
           }
         }
-      } ~
-      get {
+    } ~
+    getJson {
+      path("viewSendMessage" / IntNumber) { index =>
+        println("view SendMessage " + index)
+        complete {
+          (workerArray(index % numWorkers) ? viewSendMessageTimeline(index)).mapTo[List[DirectMessage]].map(s => s.toJson.prettyPrint)
+
+        }
+      }
+    } ~
+    getJson {
+        path("viewReceiveMessage" / IntNumber) { index =>
+          println("view ReceiveMessage " + index)
+          complete {
+            (workerArray(index % numWorkers) ? viewReceiveMessageTimeline(index)).mapTo[List[DirectMessage]].map(s => s.toJson.prettyPrint)
+
+          }
+        }
+    } ~
+    get {
         path("getNum") {
+//          println(count)
           complete {
             count.toString
           }
@@ -197,7 +228,7 @@ object project4_server extends App with SimpleRoutingApp {
         path("postTweet") {
           parameters("userID".as[Int], "mentionID".as[Int], "text".as[String], "timeStamp".as[String], "refID".as[String]) { (userID, mentionID, text, timeStamp, refID) =>
             val t = Tweet(userID, text, timeStamp, refID)
-            println(t.user_id + " " + t.text + " " + t.time_stamp)
+            println("Tweet: " + t.user_id + " " + t.text + " " + t.time_stamp)
             tweetStorage += t.ref_id -> t
             workerArray(tweet_count % numWorkers) ! processWorkload(t.user_id, t.ref_id, t.time_stamp, mentionID)
             tweet_count = tweet_count + 1
@@ -208,7 +239,33 @@ object project4_server extends App with SimpleRoutingApp {
           }
         }
       } ~
-      post {
+     post {
+       path("postMessage") {
+         parameters("userID".as[Int], "sendID".as[Double], "text".as[String], "timeStamp".as[String], "refID".as[String]) {
+           (userID, sendID, text, timeStamp, refID) =>
+             val t = DirectMessage(userID, sendID, text, timeStamp, refID)
+             println("Message: " + t.sender_id + " " + t.text + " " + t.time_stamp)
+             messageStorage += t.ref_id -> t
+             workerArray(message_count % numWorkers) ! postMessage(t.sender_id, t.ref_id, t.time_stamp, t.receiver_id)
+             message_count = message_count + 1
+
+             complete {
+               "ok"
+             }
+         }
+       }
+     } ~
+    post {
+      path("destroyMessage") {
+        parameters("user_ID".as[Int], "del_ID".as[Double]) { (user_ID, del_ID) =>
+          workerArray(user_ID % numWorkers) ! destroyMessage(user_ID, del_ID)
+          complete {
+            "ok"
+          }
+        }
+      }
+    } ~
+    post {
         path("createFriendship") {
           parameters("user_ID".as[Int], "newFriend".as[Double]) { (user_ID, newFriend) =>
             workerArray(user_ID % numWorkers) ! createFriendship(user_ID, newFriend)
@@ -242,14 +299,14 @@ object project4_server extends App with SimpleRoutingApp {
 
   case class TimeElement(ref_id: String, time_stamp: Date)
 
-  def insertIntoArray(userTimeline: ArrayBuffer[TimeElement], ref_id: String, time_stamp: Date) {
-    if (0 == userTimeline.size) {
-      userTimeline.append(TimeElement(ref_id, time_stamp))
+  def insertIntoArray(timeLine: ArrayBuffer[TimeElement], ref_id: String, time_stamp: Date) {
+    if (0 == timeLine.size) {
+      timeLine.append(TimeElement(ref_id, time_stamp))
     } else {
       var index = 0
-      while (index < userTimeline.size && time_stamp.compareTo(userTimeline(index).time_stamp) < 0)
+      while (index < timeLine.size && time_stamp.compareTo(timeLine(index).time_stamp) < 0)
         index += 1
-      userTimeline.insert(index, TimeElement(ref_id, time_stamp))
+      timeLine.insert(index, TimeElement(ref_id, time_stamp))
     }
   }
 
@@ -259,6 +316,10 @@ object project4_server extends App with SimpleRoutingApp {
     var userTimeline = new Array[ArrayBuffer[TimeElement]](numPerWorker)
     var homeTimeline = new Array[ArrayBuffer[TimeElement]](numPerWorker)
     var mentionTimeline = new Array[ArrayBuffer[TimeElement]](numPerWorker)
+
+    var sendMessageTimeline = new Array[ArrayBuffer[TimeElement]](numPerWorker)
+    var receiveMessageTimeline = new Array[ArrayBuffer[TimeElement]](numPerWorker)
+
     var followers = new Array[ArrayBuffer[Int]](numPerWorker)
     var followings = new Array[ArrayBuffer[Int]](numPerWorker)
 
@@ -267,6 +328,61 @@ object project4_server extends App with SimpleRoutingApp {
 
 
     def receive = {
+
+      case postMessage(user_id, ref_id, time_stamp, sendID) => {
+        val workerId = user_id%numWorkers
+        workerArray(workerId) ! processMessage(user_id, stringToDate(time_stamp), ref_id, sendID)
+      }
+      case processMessage(user_id, time_stamp, ref_id, sendID) => {
+        insertIntoArray(sendMessageTimeline(user_id/numWorkers), ref_id, time_stamp)
+        val friends = followers(user_id/numWorkers)
+        val friend = friends((sendID*friends.size).toInt)
+        println(user_id + " send Message to " + friend + " : " + messageStorage(ref_id).text)
+        workerArray(friend%numWorkers) ! updateMessageTimeline(friend, ref_id, time_stamp)
+      }
+      case updateMessageTimeline(user_id, ref_id, time_stamp) => {
+        insertIntoArray(receiveMessageTimeline(user_id/numWorkers), ref_id, time_stamp)
+      }
+      case viewSendMessageTimeline(i) => {
+        var sendMessageLine: List[DirectMessage] = List()
+        val line = sendMessageTimeline(i/numWorkers)
+        val userLine = line.dropRight(line.size - 25)
+        //val userLine = line
+        var t = DirectMessage(-1,-1.0, "not find this message", "", "")
+        for (ele <- userLine) {
+          if(messageStorage.contains(ele.ref_id)) {
+            t = messageStorage(ele.ref_id)
+          }
+          sendMessageLine = sendMessageLine :+ t
+        }
+        sender ! sendMessageLine
+      }
+      case viewReceiveMessageTimeline(i) => {
+        var receiveMessageLine: List[DirectMessage] = List()
+        val line = receiveMessageTimeline(i/numWorkers)
+        val userLine = line.dropRight(line.size - 25)
+        //val userLine = line
+        var t = DirectMessage(-1, -1.0, "not find this message", "", "")
+        for (ele <- userLine) {
+          if(messageStorage.contains(ele.ref_id)) {
+            t = messageStorage(ele.ref_id)
+          }
+          receiveMessageLine = receiveMessageLine :+ t
+        }
+        sender ! receiveMessageLine
+      }
+      case destroyMessage(user_id, del_ID) => {
+        val line = receiveMessageTimeline(user_id/numWorkers)
+        if(line.isEmpty) {
+          println(" message is null")
+        } else {
+          val t = line((line.size*del_ID).toInt)
+          messageStorage = messageStorage - t.ref_id
+          println("delete message " + t.ref_id)
+        }
+
+      }
+
 
       case processWorkload(user_id, ref_id, time_stamp, mentionID) => {
         val workerId = user_id%numWorkers
@@ -301,7 +417,7 @@ object project4_server extends App with SimpleRoutingApp {
         var timeLine: List[Tweet] = List()
         val line = userTimeline(i/numWorkers)
         val userLine = line.dropRight(line.size - 25)
-        var t = Tweet(-1, "", "", "")
+        var t = Tweet(-1, "not find this tweet", "", "")
         //println(sender.path.name + " userTimeline " + line.size )
         for (ele <- userLine) {
           if(tweetStorage.contains(ele.ref_id)) {
@@ -318,7 +434,7 @@ object project4_server extends App with SimpleRoutingApp {
         val line = mentionTimeline(i/numWorkers)
         val userLine = line.dropRight(line.size - 25)
         //val userLine = line
-        var t = Tweet(-1, "", "", "")
+        var t = Tweet(-1, "not find this mention", "", "")
         for (ele <- userLine) {
           if(tweetStorage.contains(ele.ref_id)) {
             t = tweetStorage(ele.ref_id)
@@ -339,7 +455,7 @@ object project4_server extends App with SimpleRoutingApp {
         val userLine = line1.dropRight(line1.size - 20)
         val line2 = homeTimeline(i/numWorkers)
         val homeLine = line2.dropRight(line2.size - 20)
-        var t = Tweet(-1, "", "", "")
+        var t = Tweet(-1, "not find this tweet", "", "")
         userLine.appendAll(mentionLine)
         userLine.appendAll(homeLine)
         //println(sender.path.name + " userTimeline " + line.size )
@@ -360,6 +476,8 @@ object project4_server extends App with SimpleRoutingApp {
           mentionTimeline(i) = new ArrayBuffer()
           followers(i) = new ArrayBuffer()
           followings(i) = new ArrayBuffer()
+          sendMessageTimeline(i) = new ArrayBuffer()
+          receiveMessageTimeline(i) = new ArrayBuffer()
         }
         ready = true
       }
