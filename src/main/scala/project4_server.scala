@@ -1,28 +1,20 @@
 import spray.routing._
 import spray.http.MediaTypes
 import spray.json._
-import DefaultJsonProtocol._
-import spray.json.{JsonFormat}
 
 import akka.actor.{ActorSystem, Actor, Props, ActorRef}
 import scala.collection.mutable.ArrayBuffer
-import java.security.MessageDigest
 import akka.util.Timeout
 import scala.concurrent.Await
 import akka.pattern.ask
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
 import java.util.Date
-import java.util.Formatter
-import java.util.Calendar
 import java.text.SimpleDateFormat
-import com.typesafe.config.ConfigFactory
-import Array._
 import scala.util.Random
 import scala.util.control.Breaks._
-import scala.collection.mutable.ListBuffer
 import common._
-
+import common.MyJsonProtocol._
 
 
 object project4_server extends App with SimpleRoutingApp {
@@ -33,7 +25,7 @@ object project4_server extends App with SimpleRoutingApp {
   case object IsBuildFinish extends Message
 
   case class buildFollowers(user_id: Int)
-  case class numFollowers(user_id: Int)
+  case class getNumFollowers(user_id: Int)
   case class addFollowings(user_id: Int, id: Int)
 
   case class processWorkload(user_id: Int, ref_id: String, time_stamp: String, mentionID: Int)
@@ -58,8 +50,6 @@ object project4_server extends App with SimpleRoutingApp {
   case class destroyFriendship(user_id: Int, oldFriend: Double)
   case class destroyTweet(user_id: Int, del_ID: Double)
   case class clientGetTweet(user_id: Int, numTweet: Double)
-
-
 
   val prob: ArrayBuffer[Double] = ArrayBuffer(0.06, 0.811, 0.874, 0.966, 0.9825, 0.9999, 0.99999, 1.000)
 
@@ -103,16 +93,6 @@ object project4_server extends App with SimpleRoutingApp {
       ready = Await.result(future.mapTo[Boolean], timeout.duration)
     }
   }
-  case class followerNum(var userID: Int, var numFollowers: Int)
-
-  object MyJsonProtocol extends DefaultJsonProtocol {
-    implicit val followerNumFormat = jsonFormat2(followerNum)
-    implicit val tweetFormat = jsonFormat4(Tweet)
-    implicit val messageFormat = jsonFormat5(DirectMessage)
-
-  }
-  import MyJsonProtocol._
-
 
   println("hello smc")
   var count = 0
@@ -138,7 +118,7 @@ object project4_server extends App with SimpleRoutingApp {
           count = count + 1
 
           complete {
-            (workerArray(index % numWorkers) ? numFollowers(index)).mapTo[followerNum].map(s => s.toJson.prettyPrint)
+            (workerArray(index % numWorkers) ? getNumFollowers(index)).mapTo[followerNum].map(s => s.toJson.prettyPrint)
 
           }
         }
@@ -503,7 +483,7 @@ object project4_server extends App with SimpleRoutingApp {
         else
           sender ! false
       }
-      case numFollowers(index) => {
+      case getNumFollowers(index) => {
         val out = followerNum(index,0)
         out.numFollowers = followers(index/numWorkers).size
         sender ! out
