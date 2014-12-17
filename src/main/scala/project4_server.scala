@@ -37,10 +37,13 @@ object project4_server extends App with SimpleRoutingApp {
   case class addFollowings(user_id: Int, id: Int)
 
   case class processWorkload(user_id: Int, ref_id: String, time_stamp: String, mentionID: Int)
-  case class processTweet(user_id: Int, time_stamp: Date, ref_id: String)
+  case class processTweet(user_id: Int, time_stamp: Date, ref_id: String, mentionID: Int)
+  case class addMentionTimeline(mentionID: Int, time_stamp: Date, ref_id: String)
   case class getFollowers(user_id: Int, time_stamp: Date, ref_id: String, followers: ArrayBuffer[Int])
   case class updateHomeTimeline(user_id: Int, time_stamp: Date, ref_id: String)
   case class viewUserTimeline(user_id: Int)
+  case class viewMentionTimeline(user_id: Int)
+  case class viewHomeTimeline(user_id: Int)
   case class clientGetFollowers(user_id: Int)
   case class clientGetFriends(user_id: Int)
   case class createFriendship(user_id: Int, newFriend: Double)
@@ -130,7 +133,7 @@ object project4_server extends App with SimpleRoutingApp {
       } ~
       getJson {
         path("viewUserTimeline" / IntNumber) { index =>
-          println("view UserTimeline" + index)
+          println("view UserTimeline " + index)
           complete {
             (workerArray(index % numWorkers) ? viewUserTimeline(index)).mapTo[List[Tweet]].map(s => s.toJson.prettyPrint)
 
@@ -138,8 +141,17 @@ object project4_server extends App with SimpleRoutingApp {
         }
       } ~
       getJson {
+      path("viewMentionTimeline" / IntNumber) { index =>
+        println("view MentionTimeline " + index)
+        complete {
+          (workerArray(index % numWorkers) ? viewMentionTimeline(index)).mapTo[List[Tweet]].map(s => s.toJson.prettyPrint)
+
+        }
+      }
+    } ~
+    getJson {
         path("viewHomeTimeline" / IntNumber) { index =>
-          println("view HomeTimeline" + index)
+          println("view HomeTimeline " + index)
           complete {
             (workerArray(index % numWorkers) ? viewHomeTimeline(index)).mapTo[List[Tweet]].map(s => s.toJson.prettyPrint)
 
@@ -258,13 +270,19 @@ object project4_server extends App with SimpleRoutingApp {
 
       case processWorkload(user_id, ref_id, time_stamp, mentionID) => {
         val workerId = user_id%numWorkers
-        workerArray(workerId) ! processTweet(user_id, stringToDate(time_stamp), ref_id)
+        workerArray(workerId) ! processTweet(user_id, stringToDate(time_stamp), ref_id, mentionID)
       }
 
-      case processTweet(user_id, time_stamp, ref_id) => {
+      case processTweet(user_id, time_stamp, ref_id, mentionID) => {
         insertIntoArray(userTimeline(user_id/numWorkers), ref_id, time_stamp)
-        println(user_id + " send tweet: " + tweetStorage(ref_id).text  )
         sender ! getFollowers(user_id, time_stamp, ref_id, followers(user_id/numWorkers))
+        println(user_id + " send tweet: " + tweetStorage(ref_id).text  )
+        if(followers(user_id/numWorkers).contains(mentionID)) {
+          workerArray(mentionID%numWorkers) ! addMentionTimeline(mentionID,time_stamp, ref_id)
+        }
+      }
+      case addMentionTimeline(mentionID, time_stamp, ref_id) => {
+        insertIntoArray(mentionTimeline(mentionID/numWorkers), ref_id, time_stamp)
       }
 
       case getFollowers(user_id, time_stamp, ref_id, followers) => {
@@ -295,13 +313,34 @@ object project4_server extends App with SimpleRoutingApp {
 //        requestPerWorker(self.path.name.toInt) = requestPerWorker(self.path.name.toInt) +1
       }
 
+      case viewMentionTimeline(i) => {
+        var mentionLine: List[Tweet] = List()
+        val line = mentionTimeline(i/numWorkers)
+        val userLine = line.dropRight(line.size - 25)
+        //val userLine = line
+        var t = Tweet(-1, "", "", "")
+        for (ele <- userLine) {
+          if(tweetStorage.contains(ele.ref_id)) {
+            t = tweetStorage(ele.ref_id)
+          }
+          mentionLine = mentionLine :+ t
+        }
+        sender ! mentionLine
+
+
+      }
+
+
       case viewHomeTimeline(i) => {
         var timeLine: List[Tweet] = List()
+        val line = mentionTimeline(i/numWorkers)
+        val mentionLine = line.dropRight(line.size - 20)
         val line1 = userTimeline(i/numWorkers)
-        val userLine = line1.dropRight(line1.size - 25)
+        val userLine = line1.dropRight(line1.size - 20)
         val line2 = homeTimeline(i/numWorkers)
-        val homeLine = line2.dropRight(line2.size - 25)
+        val homeLine = line2.dropRight(line2.size - 20)
         var t = Tweet(-1, "", "", "")
+        userLine.appendAll(mentionLine)
         userLine.appendAll(homeLine)
         //println(sender.path.name + " userTimeline " + line.size )
         for (ele <- userLine) {
@@ -318,6 +357,7 @@ object project4_server extends App with SimpleRoutingApp {
         for(i <- 0 until numPerWorker){
           userTimeline(i) = new ArrayBuffer()
           homeTimeline(i) = new ArrayBuffer()
+          mentionTimeline(i) = new ArrayBuffer()
           followers(i) = new ArrayBuffer()
           followings(i) = new ArrayBuffer()
         }
@@ -428,13 +468,14 @@ object project4_server extends App with SimpleRoutingApp {
     }else if(5 == index) {
       return genRandNumber(1001, 5000)
     }else if(6 == index) {
-      return genRandNumber(5001, 10000)
+//      return genRandNumber(5001, 10000)
+      return 5001
     }else if(7 == index) {
       //      return genRandNumber(10001, 100000)
-      return 10001
+      return 5001
     }else
     //      return 100001
-      return 10001
+      return 5001
   }
 
 
