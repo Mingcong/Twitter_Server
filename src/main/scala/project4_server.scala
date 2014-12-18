@@ -59,8 +59,8 @@ object project4_server extends App with SimpleRoutingApp {
 
   val prob: ArrayBuffer[Double] = ArrayBuffer(0.06, 0.811, 0.874, 0.966, 0.9825, 0.9999, 0.99999, 1.000)
 
-  val numWorkers = if (args.length > 0) args(0) toInt else 20  // the number of workers in server
-  val numPerWorker = if (args.length > 1) args(1) toInt else 5000  // the number of workers in server
+  val numWorkers = if (args.length > 0) args(0) toInt else 200  // the number of workers in server
+  val numPerWorker = if (args.length > 1) args(1) toInt else 500  // the number of workers in server
 
   var tweetStorage: Map[String, Tweet] = Map()
   var messageStorage: Map[String, DirectMessage] = Map()
@@ -112,8 +112,8 @@ object project4_server extends App with SimpleRoutingApp {
     respondWithMediaType(MediaTypes.`application/json`) { route }
   }
 
-
-  startServer(interface = "10.227.56.44", port = 8080) {
+//10.244.33.189
+  startServer(interface = "10.244.33.189", port = 8080) {
     getJson {
       path("hello") {
         complete {
@@ -123,7 +123,7 @@ object project4_server extends App with SimpleRoutingApp {
     } ~
     getJson {
         path("getFollowerNum" / IntNumber) { index =>
-          println(index + " " + count)
+//          println(index + " " + count)
           count = count + 1
 
           complete {
