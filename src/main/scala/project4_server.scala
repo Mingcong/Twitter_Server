@@ -112,8 +112,8 @@ object project4_server extends App with SimpleRoutingApp {
   }
 
 //10.244.33.189 192.168.1.5
-  startServer(interface = "10.227.56.44", port = 8080) {
-//    startServer(interface = "192.168.1.5", port = 9056) {
+//  startServer(interface = "10.227.56.44", port = 8080) {
+    startServer(interface = "192.168.1.5", port = 9056) {
       getJson {
         path("hello") {
           complete {
