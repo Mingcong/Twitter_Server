@@ -112,8 +112,8 @@ object project4_server extends App with SimpleRoutingApp {
   }
 
 //10.244.33.189 192.168.1.5
-//  startServer(interface = "10.227.56.44", port = 8080) {
-    startServer(interface = "192.168.1.5", port = 9056) {
+  startServer(interface = "10.227.56.44", port = 8080) {
+//    startServer(interface = "192.168.1.5", port = 9056) {
       getJson {
         path("hello") {
           complete {
@@ -252,6 +252,7 @@ object project4_server extends App with SimpleRoutingApp {
           path("destroyMessage") {
             parameters("user_ID".as[Int], "del_ID".as[Double]) { (user_ID, del_ID) =>
               workerArray(user_ID % numWorkers) ! destroyMessage(user_ID, del_ID)
+              println("user" + user_ID + " destroy a message ")
               complete {
                 "ok"
               }
@@ -415,7 +416,7 @@ class sumActor() extends Actor {
 //        workloadPerWorker(self.path.name.toInt) = workloadPerWorker(self.path.name.toInt) + 1
       }
       case updateHomeTimeline(user_id, time_stamp, ref_id) => {
-        insertIntoArray(homeTimeline((user_id/numWorkers).toInt), ref_id, time_stamp)
+        insertIntoArray(homeTimeline(user_id/numWorkers), ref_id, time_stamp)
         //        println(user_id + " following: " + tweetStorage(ref_id).text  )
 
       }
@@ -532,9 +533,10 @@ class sumActor() extends Actor {
         sender ! followings(user_id/numWorkers).toArray
       }
       case clientGetTweet(user_id, numTweet) => {
-        val line = userTimeline(user_id/numWorkers)
-        val mentionLine = mentionTimeline(user_id/numWorkers)
-        val homeLine = homeTimeline(user_id/numWorkers)
+        val line = userTimeline(user_id/numWorkers).clone()
+        val mentionLine = mentionTimeline(user_id/numWorkers).clone()
+        val homeLine = homeTimeline(user_id/numWorkers).clone()
+
         line.appendAll(mentionLine)
         line.appendAll(homeLine)
         if(!line.isEmpty)
