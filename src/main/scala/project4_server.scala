@@ -16,6 +16,9 @@ import scala.util.control.Breaks._
 import common._
 import common.MyJsonProtocol._
 
+import java.util.Calendar
+import java.util.Date
+
 
 object project4_server extends App with SimpleRoutingApp {
 
@@ -23,6 +26,7 @@ object project4_server extends App with SimpleRoutingApp {
   case object InitJob extends Message
   case object IsReady extends Message
   case object IsBuildFinish extends Message
+  case object GetSum extends Message
 
   case class buildFollowers(user_id: Int)
   case class getNumFollowers(user_id: Int)
@@ -51,17 +55,22 @@ object project4_server extends App with SimpleRoutingApp {
   case class destroyTweet(user_id: Int, del_ID: Double)
   case class clientGetTweet(user_id: Int, numTweet: Double)
 
+  case class sumRequest(i: Int)
+
   val prob: ArrayBuffer[Double] = ArrayBuffer(0.06, 0.811, 0.874, 0.966, 0.9825, 0.9999, 0.99999, 1.000)
 
   val numWorkers = if (args.length > 0) args(0) toInt else 20  // the number of workers in server
-  val numPerWorker = if (args.length > 1) args(1) toInt else 500  // the number of workers in server
+  val numPerWorker = if (args.length > 1) args(1) toInt else 5000  // the number of workers in server
 
   var tweetStorage: Map[String, Tweet] = Map()
   var messageStorage: Map[String, DirectMessage] = Map()
 
   var workerArray = ArrayBuffer[ActorRef]()
   implicit val actorSystem = ActorSystem()
-  implicit val timeout = Timeout(1.second)
+  implicit val timeout = Timeout(10.second)
+  val cycle = 10
+  val sumNode = actorSystem.actorOf(Props(classOf[sumActor]), "sumNode")
+  actorSystem.scheduler.schedule(1 seconds, cycle seconds, sumNode, GetSum )
 
   val numUsers = numWorkers * numPerWorker
   var counter: Int =0
@@ -134,7 +143,7 @@ object project4_server extends App with SimpleRoutingApp {
     } ~
     getJson {
       path("viewMentionTimeline" / IntNumber) { index =>
-        println("view MentionTimeline " + index)
+//        println("view MentionTimeline " + index)
         complete {
           (workerArray(index % numWorkers) ? viewMentionTimeline(index)).mapTo[List[Tweet]].map(s => s.toJson.prettyPrint)
 
@@ -143,9 +152,10 @@ object project4_server extends App with SimpleRoutingApp {
     } ~
     getJson {
         path("viewHomeTimeline" / IntNumber) { index =>
-          println("view HomeTimeline " + index)
+//          println("view HomeTimeline " + index)
           complete {
             (workerArray(index % numWorkers) ? viewHomeTimeline(index)).mapTo[List[Tweet]].map(s => s.toJson.prettyPrint)
+
 
           }
         }
@@ -208,11 +218,11 @@ object project4_server extends App with SimpleRoutingApp {
         path("postTweet") {
           parameters("userID".as[Int], "mentionID".as[Int], "text".as[String], "timeStamp".as[String], "refID".as[String]) { (userID, mentionID, text, timeStamp, refID) =>
             val t = Tweet(userID, text, timeStamp, refID)
-            println("Tweet: " + t.user_id + " " + t.text + " " + t.time_stamp)
+//            println("Tweet: " + t.user_id + " " + t.text + " " + t.time_stamp)
             tweetStorage += t.ref_id -> t
             workerArray(tweet_count % numWorkers) ! processWorkload(t.user_id, t.ref_id, t.time_stamp, mentionID)
             tweet_count = tweet_count + 1
-
+            sumNode ! sumRequest(1)
             complete {
               "ok"
             }
@@ -291,6 +301,19 @@ object project4_server extends App with SimpleRoutingApp {
   }
 
 
+class sumActor() extends Actor {
+  var count: Int = 0
+  var temp: Int = 0
+  def receive = {
+    case sumRequest(i) => {
+      count = count + i
+    }
+    case GetSum => {
+      println("count = " + count + " temp = " + temp + " " + Calendar.getInstance().getTime + " ThroughPut: " + (count-temp)/cycle)
+      temp = count
+    }
+  }
+}
 
   class workerActor() extends Actor {
     var userTimeline = new Array[ArrayBuffer[TimeElement]](numPerWorker)
@@ -317,7 +340,7 @@ object project4_server extends App with SimpleRoutingApp {
         insertIntoArray(sendMessageTimeline(user_id/numWorkers), ref_id, time_stamp)
         val friends = followers(user_id/numWorkers)
         val friend = friends((sendID*friends.size).toInt)
-        println(user_id + " send Message to " + friend + " : " + messageStorage(ref_id).text)
+//        println(user_id + " send Message to " + friend + " : " + messageStorage(ref_id).text)
         workerArray(friend%numWorkers) ! updateMessageTimeline(friend, ref_id, time_stamp)
       }
       case updateMessageTimeline(user_id, ref_id, time_stamp) => {
@@ -372,7 +395,7 @@ object project4_server extends App with SimpleRoutingApp {
       case processTweet(user_id, time_stamp, ref_id, mentionID) => {
         insertIntoArray(userTimeline(user_id/numWorkers), ref_id, time_stamp)
         sender ! getFollowers(user_id, time_stamp, ref_id, followers(user_id/numWorkers))
-        println(user_id + " send tweet: " + tweetStorage(ref_id).text  )
+//        println(user_id + " send tweet: " + tweetStorage(ref_id).text  )
         if(followers(user_id/numWorkers).contains(mentionID)) {
           workerArray(mentionID%numWorkers) ! addMentionTimeline(mentionID,time_stamp, ref_id)
         }
@@ -406,6 +429,7 @@ object project4_server extends App with SimpleRoutingApp {
           timeLine = timeLine :+ t
         }
         sender ! timeLine
+        sumNode ! sumRequest(timeLine.size)
 //        requestPerWorker(self.path.name.toInt) = requestPerWorker(self.path.name.toInt) +1
       }
 
@@ -446,6 +470,7 @@ object project4_server extends App with SimpleRoutingApp {
           timeLine = timeLine :+ t
         }
         sender ! timeLine
+        sumNode ! sumRequest(timeLine.size)
       }
 
 
@@ -567,13 +592,13 @@ object project4_server extends App with SimpleRoutingApp {
       return genRandNumber(1001, 5000)
     }else if(6 == index) {
 //      return genRandNumber(5001, 10000)
-      return 5001
+      return 5000
     }else if(7 == index) {
       //      return genRandNumber(10001, 100000)
-      return 5001
+      return 5000
     }else
     //      return 100001
-      return 5001
+      return 5000
   }
 
 
