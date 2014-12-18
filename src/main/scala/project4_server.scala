@@ -9,7 +9,6 @@ import scala.concurrent.Await
 import akka.pattern.ask
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
-import java.util.Date
 import java.text.SimpleDateFormat
 import scala.util.Random
 import scala.util.control.Breaks._
@@ -59,8 +58,9 @@ object project4_server extends App with SimpleRoutingApp {
 
   val prob: ArrayBuffer[Double] = ArrayBuffer(0.06, 0.811, 0.874, 0.966, 0.9825, 0.9999, 0.99999, 1.000)
 
-  val numWorkers = if (args.length > 0) args(0) toInt else 200  // the number of workers in server
-  val numPerWorker = if (args.length > 1) args(1) toInt else 500  // the number of workers in server
+  val cycle = if (args.length >0) args(0) toInt else 3600
+  val numWorkers = if (args.length > 1) args(1) toInt else 200  // the number of workers in server
+  val numPerWorker = if (args.length > 2) args(2) toInt else 500  // the number of workers in server
 
   var tweetStorage: Map[String, Tweet] = Map()
   var messageStorage: Map[String, DirectMessage] = Map()
@@ -68,9 +68,8 @@ object project4_server extends App with SimpleRoutingApp {
   var workerArray = ArrayBuffer[ActorRef]()
   implicit val actorSystem = ActorSystem()
   implicit val timeout = Timeout(10.second)
-  val cycle = 10
   val sumNode = actorSystem.actorOf(Props(classOf[sumActor]), "sumNode")
-  actorSystem.scheduler.schedule(1 seconds, cycle seconds, sumNode, GetSum )
+  actorSystem.scheduler.schedule(cycle seconds, cycle seconds, sumNode, GetSum )
 
   val numUsers = numWorkers * numPerWorker
   var counter: Int =0
@@ -112,179 +111,187 @@ object project4_server extends App with SimpleRoutingApp {
     respondWithMediaType(MediaTypes.`application/json`) { route }
   }
 
-//10.244.33.189
-  startServer(interface = "192.168.1.5", port = 9056) {
-    getJson {
-      path("hello") {
-        complete {
-          "Welcome to Spray!\n"
-        }
-      }
-    } ~
-    getJson {
-        path("getFollowerNum" / IntNumber) { index =>
-//          println(index + " " + count)
-          count = count + 1
-
-          complete {
-            (workerArray(index % numWorkers) ? getNumFollowers(index)).mapTo[followerNum].map(s => s.toJson.prettyPrint)
-
-          }
-        }
-    } ~
-    getJson {
-        path("viewUserTimeline" / IntNumber) { index =>
-          println("view UserTimeline " + index)
-          complete {
-            (workerArray(index % numWorkers) ? viewUserTimeline(index)).mapTo[List[Tweet]].map(s => s.toJson.prettyPrint)
-
-          }
-        }
-    } ~
-    getJson {
-      path("viewMentionTimeline" / IntNumber) { index =>
-//        println("view MentionTimeline " + index)
-        complete {
-          (workerArray(index % numWorkers) ? viewMentionTimeline(index)).mapTo[List[Tweet]].map(s => s.toJson.prettyPrint)
-
-        }
-      }
-    } ~
-    getJson {
-        path("viewHomeTimeline" / IntNumber) { index =>
-//          println("view HomeTimeline " + index)
-          complete {
-            (workerArray(index % numWorkers) ? viewHomeTimeline(index)).mapTo[List[Tweet]].map(s => s.toJson.prettyPrint)
-
-
-          }
-        }
-    } ~
-    getJson {
-      path("viewSendMessage" / IntNumber) { index =>
-        println("view SendMessage " + index)
-        complete {
-          (workerArray(index % numWorkers) ? viewSendMessageTimeline(index)).mapTo[List[DirectMessage]].map(s => s.toJson.prettyPrint)
-
-        }
-      }
-    } ~
-    getJson {
-        path("viewReceiveMessage" / IntNumber) { index =>
-          println("view ReceiveMessage " + index)
-          complete {
-            (workerArray(index % numWorkers) ? viewReceiveMessageTimeline(index)).mapTo[List[DirectMessage]].map(s => s.toJson.prettyPrint)
-
-          }
-        }
-    } ~
-    get {
-        path("getNum") {
-//          println(count)
-          complete {
-            count.toString
-          }
-        }
-      } ~
+//10.244.33.189 192.168.1.5
+//  startServer(interface = "10.227.56.44", port = 8080) {
+    startServer(interface = "192.168.1.5", port = 9056) {
       getJson {
-        path("getTweet" / Rest) { index =>
+        path("hello") {
           complete {
-            tweetStorage(index).toJson.prettyPrint
+            "Welcome to Spray!\n"
           }
         }
       } ~
-      getJson {
-        path("getFollowers" / IntNumber) { index =>
-          complete {
-            (workerArray(index % numWorkers) ? clientGetFollowers(index)).mapTo[Array[Int]].map(s => s.toJson.prettyPrint)
-          }
-        }
-      } ~
-      getJson {
-        path("getFriends" / IntNumber) { index =>
-          complete {
-            (workerArray(index % numWorkers) ? clientGetFriends(index)).mapTo[Array[Int]].map(s => s.toJson.prettyPrint)
-          }
-        }
-      } ~
-      getJson {
-        path("showTweet" / IntNumber / DoubleNumber) { (user_id, numTweet) =>
-          complete {
-            (workerArray(user_id % numWorkers) ? clientGetTweet(user_id, numTweet)).mapTo[Tweet].map(s => s.toJson.prettyPrint)
-          }
-        }
-      } ~
-      post {
-        path("postTweet") {
-          parameters("userID".as[Int], "mentionID".as[Int], "text".as[String], "timeStamp".as[String], "refID".as[String]) { (userID, mentionID, text, timeStamp, refID) =>
-            val t = Tweet(userID, text, timeStamp, refID)
-//            println("Tweet: " + t.user_id + " " + t.text + " " + t.time_stamp)
-            tweetStorage += t.ref_id -> t
-            workerArray(tweet_count % numWorkers) ! processWorkload(t.user_id, t.ref_id, t.time_stamp, mentionID)
-            tweet_count = tweet_count + 1
-            sumNode ! sumRequest(1)
+        getJson {
+          path("getFollowerNum" / IntNumber) { index =>
+            //          println(index + " " + count)
+            count = count + 1
+
             complete {
-              "ok"
+              (workerArray(index % numWorkers) ? getNumFollowers(index)).mapTo[followerNum].map(s => s.toJson.prettyPrint)
+
+            }
+          }
+        } ~
+        getJson {
+          path("viewUserTimeline" / IntNumber) { index =>
+            println("user" + index + " view UserTimeline ")
+            complete {
+              (workerArray(index % numWorkers) ? viewUserTimeline(index)).mapTo[List[Tweet]].map(s => s.toJson.prettyPrint)
+
+            }
+          }
+        } ~
+        getJson {
+          path("viewMentionTimeline" / IntNumber) { index =>
+            println("user" + index + " view MentionTimeline ")
+            complete {
+              (workerArray(index % numWorkers) ? viewMentionTimeline(index)).mapTo[List[Tweet]].map(s => s.toJson.prettyPrint)
+
+            }
+          }
+        } ~
+        getJson {
+          path("viewHomeTimeline" / IntNumber) { index =>
+            println("user" + index + " view HomeTimeline ")
+            complete {
+              (workerArray(index % numWorkers) ? viewHomeTimeline(index)).mapTo[List[Tweet]].map(s => s.toJson.prettyPrint)
+
+
+            }
+          }
+        } ~
+        getJson {
+          path("viewSendMessage" / IntNumber) { index =>
+            println("view SendMessage " + index)
+            complete {
+              (workerArray(index % numWorkers) ? viewSendMessageTimeline(index)).mapTo[List[DirectMessage]].map(s => s.toJson.prettyPrint)
+
+            }
+          }
+        } ~
+        getJson {
+          path("viewReceiveMessage" / IntNumber) { index =>
+            println("view ReceiveMessage " + index)
+            complete {
+              (workerArray(index % numWorkers) ? viewReceiveMessageTimeline(index)).mapTo[List[DirectMessage]].map(s => s.toJson.prettyPrint)
+
+            }
+          }
+        } ~
+        get {
+          path("getNum") {
+            //          println(count)
+            complete {
+              count.toString
+            }
+          }
+        } ~
+        getJson {
+          path("getTweet" / Rest) { index =>
+            complete {
+              tweetStorage(index).toJson.prettyPrint
+            }
+          }
+        } ~
+        getJson {
+          path("getFollowers" / IntNumber) { index =>
+            println("user" + index + " get followers ")
+            complete {
+              (workerArray(index % numWorkers) ? clientGetFollowers(index)).mapTo[Array[Int]].map(s => s.toJson.prettyPrint)
+            }
+          }
+        } ~
+        getJson {
+          path("getFriends" / IntNumber) { index =>
+            println("user" + index + " get friends ")
+            complete {
+              (workerArray(index % numWorkers) ? clientGetFriends(index)).mapTo[Array[Int]].map(s => s.toJson.prettyPrint)
+            }
+          }
+        } ~
+        getJson {
+          path("showTweet" / IntNumber / DoubleNumber) { (user_id, numTweet) =>
+            println("user" + user_id + " want to get Tweet ")
+            complete {
+              (workerArray(user_id % numWorkers) ? clientGetTweet(user_id, numTweet)).mapTo[Tweet].map(s => s.toJson.prettyPrint)
+            }
+          }
+        } ~
+        post {
+          path("postTweet") {
+            parameters("userID".as[Int], "mentionID".as[Int], "text".as[String], "timeStamp".as[String], "refID".as[String]) { (userID, mentionID, text, timeStamp, refID) =>
+              val t = Tweet(userID, text, timeStamp, refID)
+              //            println("Tweet: " + t.user_id + " " + t.text + " " + t.time_stamp)
+              tweetStorage += t.ref_id -> t
+              workerArray(tweet_count % numWorkers) ! processWorkload(t.user_id, t.ref_id, t.time_stamp, mentionID)
+              tweet_count = tweet_count + 1
+              sumNode ! sumRequest(1)
+              complete {
+                "ok"
+              }
+            }
+          }
+        } ~
+        post {
+          path("postMessage") {
+            parameters("userID".as[Int], "sendID".as[Double], "text".as[String], "timeStamp".as[String], "refID".as[String]) {
+              (userID, sendID, text, timeStamp, refID) =>
+                val t = DirectMessage(userID, sendID, text, timeStamp, refID)
+                println("Message: " + t.sender_id + " " + t.text + " " + t.time_stamp)
+                messageStorage += t.ref_id -> t
+                workerArray(message_count % numWorkers) ! postMessage(t.sender_id, t.ref_id, t.time_stamp, t.receiver_id)
+                message_count = message_count + 1
+
+                complete {
+                  "ok"
+                }
+            }
+          }
+        } ~
+        post {
+          path("destroyMessage") {
+            parameters("user_ID".as[Int], "del_ID".as[Double]) { (user_ID, del_ID) =>
+              workerArray(user_ID % numWorkers) ! destroyMessage(user_ID, del_ID)
+              complete {
+                "ok"
+              }
+            }
+          }
+        } ~
+        post {
+          path("createFriendship") {
+            parameters("user_ID".as[Int], "newFriend".as[Double]) { (user_ID, newFriend) =>
+              workerArray(user_ID % numWorkers) ! createFriendship(user_ID, newFriend)
+              println("user" + user_ID + " follow a friend ")
+              complete {
+                "ok"
+              }
+            }
+          }
+        } ~
+        post {
+          path("destroyFriendship") {
+            parameters("user_ID".as[Int], "oldFriend".as[Double]) { (user_ID, oldFriend) =>
+              workerArray(user_ID % numWorkers) ! destroyFriendship(user_ID, oldFriend)
+              println("user" + user_ID + " unfollow a friend ")
+              complete {
+                "ok"
+              }
+            }
+          }
+        } ~
+        post {
+          path("destroyTweet") {
+            parameters("user_ID".as[Int], "del_ID".as[Double]) { (user_ID, del_ID) =>
+              workerArray(user_ID % numWorkers) ! destroyTweet(user_ID, del_ID)
+              println("user" + user_ID + " destroy a Tweet ")
+              complete {
+                "ok"
+              }
             }
           }
         }
-      } ~
-     post {
-       path("postMessage") {
-         parameters("userID".as[Int], "sendID".as[Double], "text".as[String], "timeStamp".as[String], "refID".as[String]) {
-           (userID, sendID, text, timeStamp, refID) =>
-             val t = DirectMessage(userID, sendID, text, timeStamp, refID)
-             println("Message: " + t.sender_id + " " + t.text + " " + t.time_stamp)
-             messageStorage += t.ref_id -> t
-             workerArray(message_count % numWorkers) ! postMessage(t.sender_id, t.ref_id, t.time_stamp, t.receiver_id)
-             message_count = message_count + 1
-
-             complete {
-               "ok"
-             }
-         }
-       }
-     } ~
-    post {
-      path("destroyMessage") {
-        parameters("user_ID".as[Int], "del_ID".as[Double]) { (user_ID, del_ID) =>
-          workerArray(user_ID % numWorkers) ! destroyMessage(user_ID, del_ID)
-          complete {
-            "ok"
-          }
-        }
-      }
-    } ~
-    post {
-        path("createFriendship") {
-          parameters("user_ID".as[Int], "newFriend".as[Double]) { (user_ID, newFriend) =>
-            workerArray(user_ID % numWorkers) ! createFriendship(user_ID, newFriend)
-            complete {
-              "ok"
-            }
-          }
-        }
-      } ~
-      post {
-        path("destroyFriendship") {
-          parameters("user_ID".as[Int], "oldFriend".as[Double]) { (user_ID, oldFriend) =>
-            workerArray(user_ID % numWorkers) ! destroyFriendship(user_ID, oldFriend)
-            complete {
-              "ok"
-            }
-          }
-        }
-      } ~
-      post {
-        path("destroyTweet") {
-          parameters("user_ID".as[Int], "del_ID".as[Double]) { (user_ID, del_ID) =>
-            workerArray(user_ID % numWorkers) ! destroyTweet(user_ID, del_ID)
-            complete {
-              "ok"
-            }
-          }
-        }
-      }
+    }
   }
 
   case class TimeElement(ref_id: String, time_stamp: Date)
@@ -309,7 +316,7 @@ class sumActor() extends Actor {
       count = count + i
     }
     case GetSum => {
-      println("count = " + count + " temp = " + temp + " " + Calendar.getInstance().getTime + " ThroughPut: " + (count-temp)/cycle)
+      println("count = " + count +  " " + Calendar.getInstance().getTime + " ThroughPut: " + (count-temp)/cycle)
       temp = count
     }
   }
@@ -528,7 +535,11 @@ class sumActor() extends Actor {
         sender ! followings(user_id/numWorkers).toArray
       }
       case clientGetTweet(user_id, numTweet) => {
-        val line = homeTimeline(user_id/numWorkers)
+        val line = userTimeline(user_id/numWorkers)
+        val mentionLine = mentionTimeline(user_id/numWorkers)
+        val homeLine = homeTimeline(user_id/numWorkers)
+        line.appendAll(mentionLine)
+        line.appendAll(homeLine)
         if(!line.isEmpty)
           sender ! tweetStorage(line((numTweet*line.size).toInt).ref_id)
         else
